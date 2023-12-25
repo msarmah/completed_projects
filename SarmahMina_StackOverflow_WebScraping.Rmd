@@ -1,0 +1,359 @@
+---
+title: "Assignment 4 - Scraping Web Pages"
+author: "Mina Sarmah"
+date: '2023-06-04'
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+# Abstract 
+
+For this assignment we scraped the Stack Overflow results page for questions, answers, and comments for questions with the tag "R" attached to them. Within each questions we scraped the number of views, number of votes, text, tags, date of the question; the user's display name, reputation, number of badges; and if there was an editor their username and when it was posted. For each answer we scraped the text, the person who posted, the date they posted, and their reputation. Inside each of these questions, the comments were scraped by the text, the person who posted, and when they posted. 
+
+In order to organize this information, we will combine all this information in a list of lists - each question will have a list of answers and comments. Doing this for 200 questions would mean our main output would return over 500 lines. In order to save space we will report the first 6 and last 6 questions and other key outputs. 
+
+Before going into the functions and outputs, I would like to give a brief overview of my understanding of XML and web scraping. One of the main functions I used during this project was xpathSApply and xmlValue. The first functions works like the apply function in R - it takes a parsed Html file, the xpath, and applies xmlValue on every occurrence of our xpath on the parsed Html file. The xmlValue function extracts only elements that are values in the file. These two functions were useful when it came to scrape our results page for answers because we had to extract a lot of different information from different parts of our Html file. Another function related to reading in URLs was getURL. This function gets the URL from the website, in this case https://stackoverflow.com/questions/tagged/r?tab=newest&, and runs the resulting html file as one long character. Due to each machine being different we also had to run information on Accept and user agent which could be found by going under the hood and grabbing the information from the Networks section. 
+
+These three functions were vital in the functions we created and ran to output the necessary information. Next, we will describe the functions and data structures we used to extract the information.
+
+# Planning and Describing Data Structure(s)
+
+```{r, echo=FALSE}
+library(XML)
+library(RCurl)
+library(rvest)
+```
+
+```{r, echo=FALSE}
+soSearch =
+  function(url, max = -1, verbose = TRUE)
+  {
+    acceptHeader = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+    
+    p1 = getURL(paste0(url, "page=1","&pagesize=50"),
+                .opts = list(followlocation = TRUE,
+                              verbose = TRUE,
+                              httpheader = c(Accept = acceptHeader),
+                              useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
+                 ))
+    
+    
+    doc = htmlParse(p1)
+    ans = getQ(doc)
+
+    pagenums = c("page=2", "page=3", "page=9818")
+
+    
+    for (page in pagenums)
+    #   #
+    #   # gives you the next page
+    #   #
+      {
+      Sys.sleep(1)
+      p = getURL(paste0(url, page,"&pagesize=15"),
+             .opts = list(followlocation = TRUE,
+                          verbose = TRUE,
+                          httpheader = c(Accept = acceptHeader),
+                          useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
+             ))
+
+
+      doc = htmlParse(p)
+
+      ans = c(ans, getQ(doc))
+    }
+    ans
+  }
+```
+
+The first function we created is called soSearch - short for stack over flow search. As the name suggests, this function takes in each page URL through getURL, parses the resulting html document, and takes a helper function that returns all the necessary function. The helper functions and each of their purposes will be described next. 
+
+```{r, echo = FALSE}
+getQ =
+  function(doc)
+  { 
+    xpathApply(doc, "//div[contains(@id,'questions')]/div", information)
+  }
+```
+
+The first helper function is getQ. soSearch directly uses getQ to return all the functions. This is because the getQ function loops through all the nodes containing the relevant xpath in the front search page of our parsed html document and returns all the content of our information function.
+
+
+```{r, echo = FALSE}
+information =
+  #
+  #
+  function(x)
+  {
+    results = getNodeSet(x, ".//a[@class = 's-link']/@href")[[1]][1]
+    results = paste0("https://stackoverflow.com",results)
+    
+
+    qURL = getURL(results,
+                       .opts = list(followlocation = TRUE,
+                                    verbose = TRUE,
+                                    httpheader = c(Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'),
+                                    useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
+                       ))
+    
+    qHtml = htmlParse(qURL)
+    
+    rep = xpathSApply(x,".//ul[contains(@class,'s-user-card--awards')]/li/span", xmlValue, trim = TRUE)
+    
+    poster_badges = xpathSApply(qHtml, "//*[@id='question']/div[2]/div[2]/div[3]/div/div[contains(@class, 'owner')]/div/div[3]/div/span[contains(@class, 'v-visible-sr')]", xmlValue)
+    
+    if (is.null(poster_badges)==TRUE){
+      user_badges = "No badges"
+    }
+    if (is.null(poster_badges)==FALSE){
+      user_badges = poster_badges
+    }
+    
+   
+    full_info = xpathSApply(qHtml, "//*[@id='question']/div[2]/div[2]/div[3]/div", xmlValue, trim = TRUE)
+    
+   
+    full_editor = substring(full_info, regexpr("edited", full_info), regexpr("asked",full_info))
+    new_editor = xpathSApply(qHtml, "//div[@class = 'post-signature flex--item']/div/div[@class = 'user-details']/a",xmlValue)
+    
+    if (grepl("edited", full_editor) == FALSE){
+      edit_who = "Not Edited"
+      edit_when = "Not Edited"
+    } 
+    
+    # if there is a new editor 
+    if (grepl("edited", full_editor) == TRUE && is.character(new_editor) == TRUE){
+      edit_who = new_editor
+      edit_when = substring(full_editor, regexpr("edited",full_editor), regexpr("\r\n",full_editor)-1)
+    }
+    
+    # if the poster edited themselves
+    if (grepl("edited", full_editor) == TRUE && is.character(new_editor) == FALSE){
+      edit_who = xpathSApply(x,".//div[contains(@class,'s-user-card--link')]",xmlValue,trim = TRUE)[[1]]
+      edit_when = substring(full_editor, regexpr("edited",full_editor), regexpr("\r\n",full_editor)-1)
+    }
+    
+    
+    list(title = xpathSApply(x, ".//h3[contains(@class,'content-title')]/a", xmlValue, trim=TRUE),
+         q_url = results,
+         question = xpathSApply(qHtml, "//div[@class = 'postcell post-layout--right']/div[@class = 's-prose js-post-body']/p", xmlValue),
+         votes = xpathSApply(x, ".//span[contains(@class,'s-post-summary--stats-item-number')]", xmlValue, trim = TRUE)[[1]],
+         views = xpathSApply(x, ".//span[contains(@class,'s-post-summary--stats-item-number')]", xmlValue, trim = TRUE)[[3]],
+         tags = xpathSApply(x, ".//ul[@class = 'ml0 list-ls-none js-post-tag-list-wrapper d-inline']/li", xmlValue, trim = TRUE),
+         date = xpathSApply(x, ".//time[@class = 's-user-card--time']", xmlValue, trim=TRUE),
+         user = xpathSApply(x,".//div[contains(@class,'s-user-card--link')]",xmlValue,trim = TRUE),
+         reputation = rep,
+         badges = user_badges,
+         edit_user = edit_who,
+         edit_date = edit_when,
+         ans_count = xpathSApply(x, ".//span[contains(@class,'s-post-summary--stats-item-number')]", xmlValue, trim = TRUE)[[2]],
+         answer_information = getA(qHtml))
+  }
+```
+
+Our information function is the largest function we have written. This function combines all of the information needed in our final output - including information on the answers and comments and feeds it into the getQ function from above. All the question information is individually extracted at this step as well. The title, votes, views, tags, date, user, and number of answers for each question was extracted using the parsed html from our first function. The question URL was found by extracting each of the URLs from our parsed html file. We then saved this as a variable so we could grab our question text, reputation, badges, and editor information from this parsed html. We also added the function grabbing our answers and comments here. The exact description for these functions will be described below. 
+
+```{r, echo=FALSE}
+getA =
+  function(a){
+  
+      xpathApply(a, "//div[@id='answers']/div[contains(@class, 'js-answer')]", aInformation)
+    
+  }
+```
+
+The function that gets our answers and comments is getA. information uses this function to extract the answers and comments as discussed earlier. getA loops through all the nodes containing the relevant xpath for each question's parsed html file and returns all the content of our aInformation function. 
+
+```{r, echo=FALSE}
+aInformation = 
+  function(x){
+    ans_text = xpathSApply(x, ".//div[(@class='post-layout')]/div[2]/div[2]", xmlValue, trim=TRUE)
+    if (is.null(ans_text) == TRUE){
+      a_text = "No answer"
+    }
+    if (is.null(ans_text) == FALSE){
+      a_text = ans_text
+    }
+        a_u = xpathSApply(x, ".//div[@class = 'post-layout']/div[2]/div[3]/div/div/div/div[contains(@itemprop,'author')]/a", xmlValue, trim=TRUE)
+
+      
+      if (is.null(a_u) == TRUE){
+        ans_username = "No answer"
+      }
+      
+      if (is.null(a_u) == FALSE){
+        ans_username = a_u
+      }
+      
+      # information on the date, name, rep, and badges of all contributors to the answers (including editors)
+      ans_contribute = xpathSApply(x, ".//div[@class = 'post-layout']/div[2]/div[3]/div/div/div/div", xmlValue, trim=TRUE)
+      
+      if (is.null(ans_contribute) == TRUE){
+        ans_date = "No answer"
+      }
+      if (is.null(ans_contribute) == FALSE){
+        ans_date = ans_contribute[grep("answered",ans_contribute)]
+      }
+      
+      # get the rep of the answerers
+      a_r = xpathSApply(x, ".//div[@class = 'post-layout']/div[2]/div[3]/div/div/div/div[contains(@itemprop,'author')]/div/span[contains(@class, 'reputation-score')]",xmlValue)
+      
+      if (is.null(a_r) == TRUE){
+        ans_rep = "No answer"
+      }
+      
+      if (is.null(a_r) == FALSE){
+        ans_rep = a_r
+      }
+      
+      # get the badges of the answerers
+      a_b = xpathSApply(x, ".//div[@class = 'post-layout']/div[2]/div[3]/div/div/div/div[contains(@itemprop,'author')]/div/span[contains(@class, 'v-visible-sr')]",xmlValue)
+      
+      if (is.null(a_b) == TRUE){
+        ans_l_badges = "No answer"
+      }
+      
+      if (is.null(a_b) == FALSE){
+        ans_l_badges = a_b
+      }
+      
+      a_c = xpathSApply(x, ".//*[contains(@class, 'comment-text')]/div/span[@class = 'comment-copy']", xmlValue, trim = TRUE)
+      if (is.null(a_c) == TRUE){
+        c_text = "No comment"
+      }
+      
+      if (is.null(a_c) == FALSE){
+        c_text = a_c
+      }
+      
+      a_c_user = xpathSApply(x, ".//*[contains(@class, 'comment-text')]/div/div/a", xmlValue, trim = TRUE)
+      
+      if (is.null (a_c_user) == TRUE){
+        c_user = "No comment"
+      }
+      
+      if (is.null(a_c_user) == FALSE){
+        c_user = a_c_user
+      }
+      
+      a_c_date = xpathSApply(x, ".//*[contains(@class, 'comment-text')]/div/span[contains(@class, 'comment-date')]", xmlValue, trim=TRUE)
+      
+      if (is.null(a_c_date) == TRUE){
+        c_date = "No comment"
+      }
+      
+      if (is.null(a_c_date) == FALSE){
+        c_date = a_c_date
+      }
+    
+    list(text = a_text,
+         username = ans_username,
+         date = ans_date,
+         reputation = ans_rep,
+         badges = ans_l_badges,
+         comment_text = c_text,
+         comment_username = c_user,
+         comment_date = c_date)
+  }
+```
+
+aInformation returns all the answers and comments for these answers for each question. Using the qHtml variable from our previous function, we look through each answer and extract its text, display name of the poster, when it was posted, and the poster's reputation/badges. Then we go into the comments and extract the text, username, and date of the person who commented. These are all extracted through their respective xpaths and using the xpathSApply and xmlValue functions. 
+
+Next, we will use our functions from above to return the first and last 6 questions and its respective information along with some key outputs. 
+
+# Returning the Information Using the Functions 
+
+Due to space limitations, we will return the first 6 and last 6 outputs of our 200 questions. They are as follows:
+
+## First six questions 
+
+```{r, echo = FALSE}
+soSearch =
+  function(url, max = -1, verbose = TRUE)
+  {
+    acceptHeader = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+    
+    p1 = getURL(paste0(url, "page=1","&pagesize=15"),
+                .opts = list(followlocation = TRUE,
+                              verbose = TRUE,
+                              httpheader = c(Accept = acceptHeader),
+                              useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
+                 ))
+    
+    
+    doc = htmlParse(p1)
+    ans = getQ(doc)
+    ans}
+```
+
+```{r}
+head(soSearch("https://stackoverflow.com/questions/tagged/r?tab=newest&"))
+```
+
+## Last six questions 
+
+```{r, echo=FALSE}
+soSearch =
+  function(url, max = -1, verbose = TRUE)
+  {
+    acceptHeader = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+    
+    p1 = getURL(paste0(url, "page=32720","&pagesize=15"),
+                .opts = list(followlocation = TRUE,
+                              verbose = TRUE,
+                              httpheader = c(Accept = acceptHeader),
+                              useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
+                 ))
+    
+    
+    doc = htmlParse(p1)
+    ans = getQ(doc)
+    ans}
+```
+
+```{r}
+tail(soSearch("https://stackoverflow.com/questions/tagged/r?tab=newest&"))
+```
+
+Another way to take space issues into consideration, all questions with no answers immediately return an empty list for the answers sub list. This way we can avoid returning additional lines and focus on the parts of the output that have relevant answers. 
+
+## Answers for question 1169539
+
+One question I used to verify the code was question 1169539 "Linear Regression and group by in R". This question had many answers and editors for some of these answers. We will run only the answers section of this section and compare it with the Stack Overflow page to ensure everything is the same. 
+
+```{r, echo = FALSE}
+results = "https://stackoverflow.com/questions/1169539/linear-regression-and-group-by-in-r"
+qURL = getURL(results,
+                       .opts = list(followlocation = TRUE,
+                                    verbose = TRUE,
+                                    httpheader = c(Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'),
+                                    useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
+                       ))
+
+qHtml = htmlParse(qURL)
+```
+
+```{r}
+ans = getA(qHtml)
+ans
+```
+
+Here we can see that there are 10 answers because there are 10 answers for this question:
+
+```{r}
+length(getA(qHtml))
+```
+
+Looking back on our web page we can see that there are in fact 10 questions, so that part seems correct.
+
+```{r}
+ans[3]
+```
+
+
+Specifically looking at answer 3, the webpage contains information about the answer poster and the answer editor. For this answer Stack Overflow shows us that the username is ars, it was posted on July 23, 2009 at 4:55, reputation is 120k, the gold badges are 23, silver 145, and bronze 134. This matches the data we extracted. 
+
+As shown here, the comments are organized under the answers and each index of the comment text matches the comment user which matches the comment user. For example, in our first answer we have five comments. Therefore, the first comment text, first comment user, and first comment date are all for the first comment; the second comment text, second comment user, and second comment date are all for the second comment; so on and so forth. Again looking at the web page for question 3 we can see that there are 3 comments. This corresponds to what we see in our list above. Looking into the comments on the website comment 1 was posted by ToToRo on Aug 27, 2014 at 15:52, comment 2 by FraNut on Nov 17, 2015 at 9:33, and comment 3 by Herman Toothrot on May 31, 2022 at 13:04. As we can see in our list above the information we scraped matches this pattern. 
+
+From this verification, we can see that our functions scraped the information as seen on the webpage. 

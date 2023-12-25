@@ -1,0 +1,745 @@
+---
+title: "106 Project 2 - One Way ANOVA Testing"
+author: "Mina Sarmah"
+date: '2023-03-05'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Abstract
+
+In this project we will be discussing ANOVA - Analysis of Variance - testing and how Tukey-Kramer's confidence levels and Hierarchical Clustering Trees are related to this hypothesis test. In ANOVA testing we are testing to see if the means of all of our samples are equal to one another. The null hypothesis is that the means are equal to each other and the alternative hypothesis is that at least one of the means is not equal to the other means. In adjacency, the Tukey-Kramer creates confidence levels that output results similar to the ANOVA test, but visually through the use of confidence levels in a graphical format. 
+
+In Part 1 of this assignment we are simulating data to see if the Normality assumption, equal variance assumption, and equal sample size assumptions are necessary to conduct ANOVA tests. What we will see is that alone, the Normality assumption and equal variance assumption are in fact more important than the sample size assumption, but if all three assumptions are violated we will see a large discrepancy in our ANOVA testing. Additionally, we will take a look at the community samples using Hierarchical Clustering trees. For samples in the same level, created from our simulated data, they appear to also have means that are closer together compared to samples in different levels. 
+
+In Part 2 we will apply the information we learned from our simulated data to our Heart Disease data set from Kaggle. We start by creating 32 samples by dividing each participant on the basis of 5 binary variables, Heart Disease or Attack, Blood Pressure, Cholesterol, Sex, and Smoker. Taking a look at the BMI distribution of all of these 32 samples we will see that they do not follow the Normality assumption as they all appear to have a left skew. However, we find that the 32 BMI distributions have unequal variance. First, though, we assume the Normality and equal variance assumptions are met and conduct the ANOVA and Tukey-Kramer tests and find that the means of all 32 distributions are not equal to each other at a 5% significance. Looking at our Hierarchical Clustering Trees, we are able to suggest the same conclusions as the heights between different clusters have wide ranges of values, especially between clusters. 
+
+## Part 1 - Exploring Beyond One Way ANOVA with Simulated Data 
+
+When conducting an ANOVA test there are 3 conditions we have to be mindful of: 
+1. The distribution of all samples are Normal
+2. The variances of all samples are equal
+3. The observations are independent of each other 
+
+To test if these assumption hold we will replicate each scenario 10,000 times to ensure the simulated data follows the Central Limit Theorem. Then we will find the proportion of simulations that rejected the null hypothesis. In our simulated data the mean values are all set equal to each other, so the proportion should always be close to or less than our alpha value of 0.05, the probability of rejecting the null hypothesis by chance. Then we will take the Tukey-Kramer test at a 95% confidence interval to test if the confidence intervals contain 0. If it does this means there is not a large significant difference in the means between the two samples. 
+
+If our simulated data set follows all the assumptions, the probability that we reject our null hypothesis is as follows:
+
+```{r, echo = FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+}
+sum(pvalues1<0.05)/B
+```
+
+Since this probability is close to our alpha of 0.05, which is the probability of rejecting our null hypothesis by chance, we can say the ANOVA test can successfully be taken under these assumptions. 
+
+To further see this relationship we will take a Tukey-Kramer test. The Tukey-Kramer test is a family-wise confidence interval that controls for the family wise Type-1 error rate in hypothesis testing. 
+
+```{r, echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+Since all the confidence intervals contain zero at a 95% confidence interval, we can say there is no significant difference in means among the three levels. This should be the case since we followed all the assumptions necessary to conduct an ANOVA test. In the next sections we will see what happens when these assumptions are violated. 
+
+
+***Imbalances in Sample Size***
+
+Although equal sample sizes is not an assumption the ANOVA test requires, large differences in sample sizes could play an effect on the test. To see if any significant changes occur to our ANOVA test, we will first see what happens when one of our sample sizes is different. We make Level 1 and Level 2 have a sample size of 1 and Level 3 have a sample size of 100. The average probability of rejecting our null hypothesis in this scenario is:
+
+```{r,echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(1,1,100)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+  
+}
+sum(pvalues1<0.05)/B
+```
+
+Since our average probability of rejecting the null is similar to alpha, we can suggest that the differences in means can be left to chance. We will further explore this in our Tukey-Kramer confidence intervals:
+
+```{r,echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+Similar to our hypothesis test, our Tukey-Kramer confidence interval at 95% suggests that there is no significant difference in the means of each of our levels since all the intervals contain zero. In the next test we will see what happens when all three levels have a different sample size. 
+
+We make Level 1 have a sample size of 1, Level 2 a sample size of 10, and Level 3 a sample size of 1000. Taking the ANOVA test, the probability of rejecting the null hypothesis is:
+
+```{r,echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(1,10,1000)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+  
+}
+sum(pvalues1<0.05)/B
+```
+
+Taking the Tukey Kramer test with 95% confidence, we see:
+
+```{r,echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+Similar to the scenario where we only changed the sample size of one of the levels, this simulated data set with three different sample sizes for each of our levels shows no significant deviation from our null hypothesis that all the means are equal. The probability of rejecting our null hypothesis again is mostly subject to chance and at a 95% confidence level, we can tell that there is no significant difference in the difference in the means since all three confidence intervals for the comparisons include zero. 
+
+In both cases, the proportion of samples that reject the null is similar to the probability of rejecting the null hypothesis by chance, so imbalances in sample size do not play a large effect in our ANOVA test. 
+
+
+***Unequal Variance***
+
+Equal variances is an assumption for ANOVA testing. Therefore, we will test many scenarios for the differences in standard deviations (square root of variance) in each of our samples and see if it supports this assumption. First we will see what happens when we set the standard deviation of Level 1 as 1, Level 2 as 0.0001, and Level 3 as 0.01. The proportion of tests that reject the null hypothesis are:
+
+```{r, echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,0.0001,0.01)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+  
+}
+sum(pvalues1<0.05)/B
+```
+
+This value is significantly higher than our alpha of 0.05 and shows that there are a higher proportion of simulations that rejected the null hypothesis outside of chance. Looking at the Tukey-Kramer intervals at a 95% confidence interval we can see that:
+
+```{r, echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+It appears that at a 95% significance, each confidence interval includes 0 when the standard deviations are all different and less than or equal to one. Although the proportions from the ANOVA test suggested a potential deviation from the credibility of the ANOVA test, the Tukey-Kramer confidence intervals suggested otherwise. Let's see if there is a larger change when looking at standard deviations that are all different and all greater than 1. Here is the proportion of simulations that rejected the null hypothesis when Level 1 has a standard deviation of 10, Level 2 of 1000, and Level 3 of 500:
+
+```{r, echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(10,1000,500)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+  
+}
+sum(pvalues1<0.05)/B
+```
+
+This proportion appears to be greater than 0.05, which is the proportion of simulations that reject the null hypothesis based on chance. Continuing from the proportion we saw in the replication earlier, this greater proportion suggests that when variances are unequal, we reject the hypothesis not by chance. Looking at the Tukey-Kramer family-wise confidence interval we see:
+
+```{r, echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+Likewise to the situation where the standard deviations were all small but less than 1, the Tukey-Kramer test for this scenario gives us three intervals that still involve zero in their intervals. This suggests a different outcome from our ANOVA test, likely due to the influence of the standard deviation. Finally, let's look at what happens when one standard deviation value is very large and one standard deviation is very small. We will set Level 1 to standard deviation of 1, Level 2 to 10000, and Level 3 to 0.001:
+
+```{r,echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,10000,0.001)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit_new=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit_new)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+  
+}
+sum(pvalues1<0.05)/B
+```
+
+This again produces similar results as we have seen in our past two replications. Taking a look at the Tukey-Kramer family-wise confidence intervals we can suggest the same as well:
+
+```{r,echo=FALSE}
+tukey = TukeyHSD(fit_new, conf.level = .95)
+plot(tukey)
+```
+
+From these three replications, we can see the importance of the equal variance assumption. The ANOVA tests and their accompanying proportions show that all of the simulations where variance was not equal rejected the null hypothesis outside of the probabilities of chance. Looking at the Tukey-Kramer tests the range of their results is rather larger in the context of the standard deviations we chose. Even though they mainly include 0 in their interval, we are able to further see the vast differnces in means the different samples and their simulations can create. 
+
+
+***Violating the Normality assumption***
+
+Another assumption to one-way ANOVA is that each samples' distribution is normally distributed. In the first part of this section we were able to see the proportion of simulations that were rejected when all of the assumptions were met. This included the fact that each level had a normal distribution. Let's see what happens when all the levels have a t-distribution with a degrees of freedom n-1:
+
+```{r,echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rt(samples[i],samples[i]-1)
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+}
+sum(pvalues1<0.05)/B
+```
+
+Here all the levels have a t-distribution with a degrees of freedom 2. The proportion falls near our alpha value of 0.05 suggesting the unequal means were only seen by chance. The Tukey-Kramer confidene level is as follows:
+
+```{r,echo=FALSE}
+tukey = TukeyHSD(fit_new, conf.level = .95)
+plot(tukey)
+```
+
+One thing to note about t-distributions with smaller degrees of freedom is their similarity to the Normal distribution. However, let's see what happens when we change the degrees of freedom to 2000. 
+
+```{r, echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rt(samples[i],2000)
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+}
+sum(pvalues1<0.05)/B
+```
+
+A larger degree of freedom still seems to output proportions that are close to 0.05. Looking at the Tukey-Kramer confidence levels below show us a similar pattern:
+
+```{r,echo=FALSE}
+tukey = TukeyHSD(fit_new, conf.level = .95)
+plot(tukey)
+```
+
+Let's see what happens when we have Level 1 with a uniform distribution, Level 2 with a degrees of freedom 10000, and Level 3 with a normal distribution:
+
+```{r,echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+  
+  Y1=mean1[1]+runif(samples[1],min=0,max=1)
+  Y2=mean1[2]+rt(samples[2],10000)
+  Y3=mean1[3]+rnorm(samples[3],mean=0,sd=sd1[3])
+  data_i=cbind(c(Y1,Y2,Y3),c(1,2,3))
+  mydata=rbind(mydata,data_i)
+  
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+}
+sum(pvalues1<0.05)/B
+```
+
+In this scenario, the proportion is a lot smaller than what can be left to chance. Adding the uniform distribution has likely caused this occurrence because the distribution is significantly different from that of the normal or t-distribution. Since the proportion of simulations that rejected the null hypothesis is so low, it creates an opposite effect from what we have been seeing in earlier replications. The Tukey-Kramer confidence intervals show the relatively small intervals that suggest the similar result to our ANOVA test:
+
+```{r,echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+Violating the normality assumption plays some effect on the way ANOVA tests are calculated and their overall credibility. As we have seen, the t-distribution gives results relatively similar to the Normal distribution due to the symmetrical nature of the distribution. The uniform distribution, on the other hand, adds a unique distribution shape that affects the fitted values used for the ANOVA test. This affected our proportion by making the proportion of simulations that rejected the null hypothesis a lot lower than our alpha value. This shows the importance of having a Normal distribution for each sample. 
+
+
+***Violating all Assumptions***
+
+What would happen if all the assumptions are violated? Here we will change our standard deviations and distributions and our sample sizes to see what happens to our proportion:
+```{r, echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+pvalues1=numeric(B)
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(4,78,150)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+  
+  Y1=mean1[1]+rt(samples[2],10000)
+  Y2=mean1[2]+runif(samples[1],min=0,max=1)
+  Y3=mean1[3]+rnorm(samples[3],mean=0,sd=sd1[3])
+  data_i=cbind(c(Y1,Y2,Y3),c(1,2,3))
+  mydata=rbind(mydata,data_i)
+  
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+  # fit anova model
+  fit1=aov(y~level,data=mydata)
+
+  # extract p-value
+  result1=anova(fit1)
+  pvalues1[b]=result1$`Pr(>F)`[1]
+}
+sum(pvalues1<0.05)/B
+```
+
+When all assumptions hold we get a proportion close to 0.05. However, when all assumptions do not hold we end up with a proportion that is significantly smaller than 0.05. This shows the importance of equal variances and normal distributions while taking the ANOVA test. Below is the Tukey-Kramer confidence interval for this replication:
+```{r, echo=FALSE}
+tukey = TukeyHSD(fit1, conf.level = .95)
+plot(tukey)
+```
+
+
+***Community Structures among K Samples***
+
+To find community structures among our samples we will create hierarchical clustering trees. These trees will help us determine what levels have similar average values and thus better understand the differences in means between each of our levels. We can then take this to compare with our ANOVA proportions and Tukey-Kramer confidence intervals calculated above. 
+
+```{r,echo=FALSE}
+# B number of replicates
+B=10000
+# save all p-values in the vector pvalues1
+for(b in 1:B){
+  K=3
+  # mean1=(mu1,mu2,mu3)
+  mean1=c(1,1,1)
+  # sd1=(sigma1,sigma2,sigma3)
+  sd1=c(1,1,1)
+  # samples=(n1,n2,n3)
+  samples=c(10,10,10)
+
+  # initialize mydata
+  mydata=data.frame()
+
+  for(i in 1:K){
+    Yi=mean1[i]+rnorm(samples[i],mean=0,sd=sd1[i])
+    data_i=cbind(Yi,i)
+    mydata=rbind(mydata,data_i)
+  }
+  colnames(mydata)=c('y','level')
+  # convert to factor variable
+  mydata$level=as.factor(mydata$level)
+}
+```
+
+
+First let's start with single linkage with three families and then 6 families:
+
+```{r,echo=FALSE}
+dfl = mydata[,1:2]
+clusters = hclust(dist(dfl), method="single")
+plot(clusters,xlab = "",main="Single Linkage Dendogram with 3 clusters")
+clusterCut = cutree(clusters,3)
+rect.hclust(clusters,k=3)
+table(clusterCut, dfl$level)
+```
+
+```{r,echo=FALSE}
+dfl = mydata[,1:2]
+clusters = hclust(dist(dfl), method="single")
+plot(clusters,xlab = "",main="Single Linkage Dendogram with 6 clusters")
+clusterCut = cutree(clusters,6)
+rect.hclust(clusters,k=6)
+table(clusterCut, dfl$level)
+```
+
+A single linkage cluster tree calculates the minimum distance between two groups and connects them to create a tree. Here we can see that regardless of the number of clusters, values in the same level appear to be closer to one another compared to values in different levels. The height of the tree is also shorter when connecting two clusters from different levels. This shows that the difference in means is very small when comparing between samples. 
+
+Next let's take an average linkage tree with 3 families and 6 families:
+
+```{r,echo=FALSE}
+dfl = mydata[,1:2]
+clusters = hclust(dist(dfl), method="average")
+plot(clusters,xlab = "",main="Average Linkage Dendogram with 3 clusters")
+clusterCut = cutree(clusters,3)
+rect.hclust(clusters,k=3)
+table(clusterCut, dfl$level)
+```
+
+```{r,echo=FALSE}
+dfl = mydata[,1:2]
+clusters = hclust(dist(dfl), method="average")
+plot(clusters,xlab = "",main="Average Linkage Dendogram with 6 clusters")
+clusterCut = cutree(clusters,6)
+rect.hclust(clusters,k=6)
+table(clusterCut, dfl$level)
+```
+
+An average linkage cluster tree calculates the average distance between two groups and connects them to create a tree. Here we can see that there seems to be more levels intersecting with one another and their being more variation in the families. In comparison to the single linkage tree, the height range has expanded to 2 indicating their being more differences in mean between the groups. 
+
+Lastly, we will look at the centroid linkage tree with 3 families and 6 families. 
+
+```{r,echo=FALSE}
+dfl = mydata[,1:2]
+clusters = hclust(dist(dfl), method="centroid")
+plot(clusters,xlab = "",main="Centroid Linkage Dendogram with 3 clusters")
+clusterCut = cutree(clusters,3)
+rect.hclust(clusters,k=3)
+table(clusterCut, dfl$level)
+```
+
+```{r,echo=FALSE}
+dfl = mydata[,1:2]
+clusters = hclust(dist(dfl), method="centroid")
+plot(clusters,xlab = "",main="Centroid Linkage Dendogram with 6 clusters")
+clusterCut = cutree(clusters,6)
+rect.hclust(clusters,k=6)
+table(clusterCut, dfl$level)
+```
+
+A centroid linkage cluster tree takes the distance of the centroids in each group and connects them to create a tree. Here we can see that for a family of 3, most of the samples fall inside one cluster. This shows how similar all the means are to one another considering the height of these clusters is also short. Out of all the forms of linkage, centroid linkage has given us the best evidence in support of our null hypothesis that all the means are equal. 
+
+
+***Conclusion***
+
+From these simulations we are able to conclude the importance of our equal variance and Normality assumptions. They are important in keeping the proportion of simulations that reject the null hypothesis at alpha - or at the level of chance. Sample size does not play as big of an effect, but when we alter the standard deviation, Normality assumption, and the sample size our proportion value becomes hard to suggest to use with ANOVA. Through our community structures we were able to see how the mean values of a data set that met all the ANOVA assumptions were similar and different from one another. From this we were able to further visually understand the closeness in means all the levels had with one another. 
+
+## Part 2 - Exploring Beyond One Way ANOVA with Kaggle Data 
+
+Here we will create the 32 distributions for our 5 binary variables: Heart Disease or Attack, High Blood Pressure, High Cholestrol, Sex, and Smoker. All of these variables with 0 indicating No and 1 indicating Yes. For Sex 0 is 
+```{r,echo=FALSE}
+# read in data
+setwd("~/Documents/sta/106/project1")
+heart = read.csv("heart_data.csv")
+heart$HeartDiseaseorAttack=as.factor(heart$HeartDiseaseorAttack)
+heart$HighBP=as.factor(heart$HighBP)
+heart$HighChol=as.factor(heart$HighChol)
+heart$Sex = as.factor(heart$Sex)
+heart$Smoker = as.factor(heart$Smoker)
+library(iNZightTools)
+library(ggplot2)
+
+# create the combined variable
+combined = combineCatVars(heart, vars = c('HeartDiseaseorAttack', 'HighBP', 'HighChol', 'Sex', 'Smoker'), sep = "_")
+
+# create the 32 histograms 
+p = ggplot(combined, aes(x=combined$BMI)) + facet_wrap(~combined$HeartDiseaseorAttack_HighBP_HighChol_Sex_Smoker, ncol=4) + labs(x ='BMI', title ='Histogram of BMI and Heart Disease or Attack')
+
+p + geom_bar()+
+  scale_fill_discrete(name= "Heart Disease or Attack", labels = c("No", "Yes"))
+```
+
+The 32 distributions do not appear to be normally distributed and instead appear to be skewed to the right. Naturally, there are more data points for the groups who have people without Heart Disease or Attack since they had a higher proportion than individuals who did suffer from Heart Disease or Attack. This can be seen almost like a pattern on our multiple histograms which is interesting. Additionally, the way all the distributions appear to have the same BMI distribution despite having different sample sizes and a different combination of variables is something worth noting in this multiple histogram. 
+
+However, now we will assume that all the distributions appear Normal and that the variances for each of the 32 samples is equal. Therefore, we will conduct a one way ANOVA test and Tukey Kramer test to see if the average BMI for each category is equal. 
+
+```{r,echo=FALSE}
+fit2 = aov(combined$BMI~combined$HeartDiseaseorAttack_HighBP_HighChol_Sex_Smoker, data = combined)
+anova(fit2)
+```
+
+Since our p-value is less than 2.2e-16 which is less than alpha of 0.05, we reject our null hypothesis that the means of all 32 samples are equal. We can even see this in our Tukey Kramer family-wise confidence levels:
+
+```{r,echo=FALSE}
+tukey=TukeyHSD(fit2, conf.level=.95)
+plot(tukey)
+```
+
+Although there are some intervals that contain zero, a majority of the intervals do not contain zero at the 95% confidence level. This agrees with our p-value and conclusion found above that all the means are not equal. 
+
+
+Earlier we assumed that the variance assumption and Normality assumption were met in order to conduct this ANOVA test. However, now we must test if this is true. Below is a chart that calculates the first few standard deviations from our 32 samples:
+
+```{r,echo=FALSE}
+Build_contigencytable=function(data,group,variable,bins = 10,proportion=FALSE){
+  table1=NULL
+  # create break points for the following histograms
+  # from minimum to maximum with equal distance
+  ax=seq(min(data[,variable]),max(data[,variable]),length.out=bins+1)
+  # Save histogram data
+  list_group=unique(data[,group])
+  for(i in list_group){
+    hg1=hist(data[data[,group]==i,variable], breaks = ax,plot = FALSE)
+    table1=rbind(table1,hg1$counts)
+  }
+  rownames(table1)=list_group
+  colnames(table1)=1:ncol(table1)
+  # calculate row sum and combine it  with the current table
+  table1=cbind(table1, 'Average'=apply(table1,1,mean))
+  table1=cbind(table1, 'Standard Deviation'=apply(table1,1,sd))
+  # calculate column sum and combine it  with the current table
+
+  if(proportion){
+    # convert to proportions
+    n_col=ncol(table1)
+    for(i in 1:nrow(table1)){
+      table1[i,]=table1[i,]/table1[i,n_col]
+    }
+  }
+  table1
+}
+
+ctable = Build_contigencytable(combined,"HeartDiseaseorAttack_HighBP_HighChol_Sex_Smoker","BMI")
+table_sd = data.frame(c(ctable[,0], ctable[,12]))
+table_sd
+```
+
+From this chart we can see that the standard deviations are relatively different from one another. In Part 1 when we tested for unequal variance, we had the standard deviations vary from the thousandths to the thousand. This showed great variations in our proportion of simulations that rejected the null hypothesis. Although our data set here does not vary across that range it does vary in the thousands and hundres, so the equal variance assumption is is violated. 
+
+Next we will see if the Normality distribution was violated. First off, we know that the standard deviations differ greatly from each other which plays and effect on the Normal distribution. Secondly, we saw earlier that all 32 distributions seem to follow a right skew distribution - again not following the Normal distribution. To show this further, let's take a QQ plot of one of our histograms:
+
+```{r, echo=FALSE}
+# make qq plot
+sh = split(heart, f = list(heart$HeartDiseaseorAttack, heart$HighBP, heart$HighChol, heart$Smoker, heart$Sex))
+qqnorm(sh$`0.0.0.0.0`$BMI, frame = FALSE)
+qqline(sh$`0.0.0.0.0`$BMI, col = "steelblue", lwd = 2)
+```
+
+Our curve does not appear to be near the line indicating a lack of Normality in our distribution. Therefore, for this level to the Normality distribution is clearly violated. 
+
+Finally, let's look at the community structures among these 32 samples. 
+
+Here is a table of the average BMI values for each of the 32 samples:
+```{r,echo=FALSE}
+table_avg = data.frame(c(ctable[,0], ctable[,11]))
+table_avg
+```
+
+```{r,echo=FALSE}
+#single linkage method
+dfl2 = table_avg
+clusters = hclust(dist(dfl2), method="single")
+plot(clusters,xlab = "",main="Single Linkage Dendogram")
+clusterCut = cutree(clusters,6)
+rect.hclust(clusters,k=6)
+```
+
+For 6 clusters and single linkage, there appears to be one family with most of the values. This shows that the average BMI values in the family with the most members is relatively close to each other compared to those in different families. Additionally, the heights between families are taller than within families showing that the values differ more between the clusters than within our clusters. There is one group that does not have heart disease, does not smoke, does not have high cholesterol, does not have high blood pressure, and is female that has a larger count value compared to all the other values. It does not find itself in any of the clusters with other values and is connected only to the community structure with all the 31 other variables. 
+
+Next let's look at the average linkage and centroid linkage dendograms:
+
+```{r,echo=FALSE}
+#average linkage method
+dfl2 = table_avg
+clusters = hclust(dist(dfl2),method="average")
+plot(clusters,xlab = "",main="Average Linkage Dendogram")
+clusterCut = cutree(clusters,6)
+rect.hclust(clusters,k=6)
+```
+
+```{r,echo=FALSE}
+# centroid linkage method
+dfl2 = table_avg
+clusters = hclust(dist(dfl2),method="centroid")
+plot(clusters,xlab = "",main="Centroid Linkage Dendogram")
+clusterCut = cutree(clusters,6)
+rect.hclust(clusters,k=6)
+```
+
+The average and centroid linkage dendograms both show how similar the counts are for groups that are in the heart disease or attack group or the no heart disease or attack group respectively. Again, samples within families appear to have very similar averages due to their shorter heights. However, samples between families have very tall heights and therefore different averages. From this we can tell that there are large differences between our average counts.
+
+Finally, let's compare the results we see from these Hierarchical Clustering trees to the results from our ANOVA and Tukey Kramer's comparison. The p-value from our ANOVA test was 2.2e-16 and the intervals in the Tukey-Kramer confidence interval mainly did not contain 0. Therefore, our ANOVA and Tukey Kramer's comparison suggested that we should reject our null hypothesis that all the means are equal. 
+
+In our Hierarchical Clustering trees, we can see the large range of values given in y-axis indicating that there is a large differnce in means within or between clusters. Specifically, looking at the average and centroid linkage tree, we can see that one of the main clusters contains all of the individuals who have heart disease or attack. It is interesting to see that this one variable affects how close the means for these values are. However, moving out of these individual clusters we are able to see that there is great differences in the means of the two main clusters. 
+
+From this, we can see the Hierarchical Clustering tree supports our ANOVA test and Tukey-Kramer confidence levels.
+
+## Code Appendix
+
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+```

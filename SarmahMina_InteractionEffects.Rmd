@@ -1,0 +1,2447 @@
+---
+title: "Final Project - Analysis of Variance STA 106"
+author: "Mina Sarmah"
+date: '2023-03-24'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(fig.width=7, fig.height=4) 
+```
+
+# Abstract
+
+In this report our goal is to see if there are any interaction effects and if so what variables are most important in those interaction variables. In order to do this we first subset our data into 5 subsets based on the General Health variables categories. Then we create the proportional vector contingency tables for the 3-way interactions, 2-way interactions, 1-way interactions, and no interaction between the heart disease, high blood pressure, and high cholesterol variables. From these contingency tables we create an HC Tree for the 3 way interactions for each of the 5 subsets. From here we will return the contingency tables for the interactions we find most influential from the HC Tree approach and compare each row's proportions to the column-sum proportion. With the 3-way interaction variables in mind, we move on to the Entropy Approach to see what specific variables in the 3-way interaction may cause the biggest increase in predictability. This can be further explored through the multinomial entropy distribution in our reliability section. We also look at the HC-Tree reliability in this section by creating HC Trees based off our random multinomial distribution data. 
+
+From these tests we were able to suggest a few findings. Firstly, regardless of subset we see that the interaction between heart disease, no high blood pressure, and high cholesterol has the strongest interaction effect. From here we were able to conclude that adding not high blood pressure variable caused the greatest increase in our predictability.
+
+
+# Introduction
+In this project our main goal was to analyze interaction effects and the variables that were most prominent in these interactions through categorical exploratory data analysis. Through this analysis we were able to establish K sample tree geometries and the geometric reliability. Taking this one step further, we looked at entropy values and their geometric reliability. 
+
+Our BRFSS2015 dataset we will analyze contains all independent variables that were collected in 2015. In this project we are trying to see if any of these variables worked dependently to create the BMI proportions also surveyed as part of the dataset. Here, we will only look at the possible interaction between three variables. 
+
+
+# Results and Analysis
+
+For this analysis we will be looking at data from the BRFSS2015 dataset. 
+```{r, echo=FALSE}
+# read in data 
+setwd("~/Documents/sta/106/final")
+heart = read.csv("heart_data.csv", header=TRUE)
+```
+We will split the data set into 5 subcategories based on our General Health variable. General Health has 5 levels, level 1 being the best and level 5 being the worst. To see our first subset, all the data points that have General Health at Level 1, we will run the first 10 rows of our subset 1 data set. 
+```{r, echo=FALSE}
+# separate into 5 subsets 
+GH_1 = data.frame(heart[heart$GenHlth==1,])
+GH_2 = data.frame(heart[heart$GenHlth==2,])
+GH_3 = data.frame(heart[heart$GenHlth==3,])
+GH_4 = data.frame(heart[heart$GenHlth==4,])
+GH_5 = data.frame(heart[heart$GenHlth==5,])
+head(GH_1, n=10)
+```
+
+```{r, echo=FALSE}
+# contingency table function
+Build_contigencytable=function(data,group,variable,bins=10,proportion=TRUE){
+  table1=NULL
+  # create break points for the following histograms
+  # from minimum to maximum with equal distance
+  ax=seq(min(data[,variable]),max(data[,variable]),length.out=bins+1)
+  # Save histogram data
+  list_group=unique(data[,group])
+  for(i in list_group){
+    hg1=hist(data[data[,group]==i,variable], breaks = ax,plot = FALSE)
+    table1=rbind(table1,hg1$counts)
+  }
+  rownames(table1)=list_group
+  colnames(table1)=1:ncol(table1)
+  # calculate row sum and combine it  with the current table
+  table1=cbind(table1, 'Total'=apply(table1,1,sum))
+  # calculate column sum and combine it  with the current table
+  table1=rbind(table1, 'Total'=apply(table1,2,sum))
+  # convert to proportions
+  n_col=ncol(table1)
+  for(i in 1:nrow(table1)){
+    table1[i,]=table1[i,]/table1[i,n_col]
+  }
+  
+  table1
+}
+```
+
+```{r, echo=FALSE}
+# vectors to factors
+# factors help us organize labels into levels 
+
+# for the heart data set
+heart$HeartDiseaseorAttack=as.factor(heart$HeartDiseaseorAttack)
+heart$HighBP=as.factor(heart$HighBP)
+heart$HighChol=as.factor(heart$HighChol)
+
+# for the first subset
+GH_1$HeartDiseaseorAttack=as.factor(GH_1$HeartDiseaseorAttack)
+GH_1$HighBP=as.factor(GH_1$HighBP)
+GH_1$HighChol=as.factor(GH_1$HighChol)
+
+# for the second subset
+GH_2$HeartDiseaseorAttack=as.factor(GH_2$HeartDiseaseorAttack)
+GH_2$HighBP=as.factor(GH_2$HighBP)
+GH_2$HighChol=as.factor(GH_2$HighChol)
+
+# for the third subset
+GH_3$HeartDiseaseorAttack=as.factor(GH_3$HeartDiseaseorAttack)
+GH_3$HighBP=as.factor(GH_3$HighBP)
+GH_3$HighChol=as.factor(GH_3$HighChol)
+
+# for the fourth subset
+GH_4$HeartDiseaseorAttack=as.factor(GH_4$HeartDiseaseorAttack)
+GH_4$HighBP=as.factor(GH_4$HighBP)
+GH_4$HighChol=as.factor(GH_4$HighChol)
+
+# for the fifth subset
+GH_5$HeartDiseaseorAttack=as.factor(GH_5$HeartDiseaseorAttack)
+GH_5$HighBP=as.factor(GH_5$HighBP)
+GH_5$HighChol=as.factor(GH_5$HighChol)
+```
+
+
+## Subset 1 HC and Entropy Methods
+
+Starting with subset 1, we will look at the hierarchical clustering tree of the 3 way interaction between heart disease, high blood pressure, and high cholesterol. 
+
+```{r, echo=FALSE}
+library(iNZightTools)
+# combined 3 way variable for subset 1 
+GH_1$BMI = as.numeric(GH_1$BMI)
+combined_1 = combineCatVars(GH_1, vars = c('HeartDiseaseorAttack', 'HighBP', 'HighChol'), sep = "_")
+# contingency table for subset 1
+cont_ss1=Build_contigencytable(combined_1,"HeartDiseaseorAttack_HighBP_HighChol","BMI")
+# last column not needed in entropy so we can discard [df in discussion]
+cont_ss1=cont_ss1[,1:(ncol(cont_ss1)-1)]
+# HC_ss1 = cont_ss1[1:(nrow(cont_ss1)-1),1:(ncol(cont_ss1)-1)]
+# HC_ss1
+
+# 2 way contingency tables for subset 1
+# HD and BP interaction
+GH_1$BMI = as.numeric(GH_1$BMI)
+combined_1_HD_BP = combineCatVars(GH_1, vars = c('HeartDiseaseorAttack', 'HighBP'), sep = "_")
+# contingency table for HD+BP
+cont_ss1_HD_BP=Build_contigencytable(combined_1_HD_BP,"HeartDiseaseorAttack_HighBP","BMI")
+cont_ss1_HD_BP=cont_ss1_HD_BP[,1:(ncol(cont_ss1_HD_BP)-1)]
+# HD and Chol interaction
+GH_1$BMI = as.numeric(GH_1$BMI)
+combined_1_HD_Chol = combineCatVars(GH_1, vars = c('HeartDiseaseorAttack', 'HighChol'), sep = "_")
+# contingency table for HD+Chol
+cont_ss1_HD_Chol=Build_contigencytable(combined_1_HD_Chol,"HeartDiseaseorAttack_HighChol","BMI")
+cont_ss1_HD_Chol=cont_ss1_HD_Chol[,1:(ncol(cont_ss1_HD_Chol)-1)]
+# BP and Chol distribution
+GH_1$BMI = as.numeric(GH_1$BMI)
+combined_1_BP_Chol = combineCatVars(GH_1, vars = c('HighBP', 'HighChol'), sep = "_")
+# contingency table for BP+Chol
+cont_ss1_BP_Chol=Build_contigencytable(combined_1_BP_Chol,"HighBP_HighChol","BMI")
+cont_ss1_BP_Chol=cont_ss1_BP_Chol[,1:(ncol(cont_ss1_BP_Chol)-1)]
+
+# one way interactions
+# HD effect on BMI
+GH_1$BMI = as.numeric(GH_1$BMI)
+# contingency table for HD
+cont_ss1_HD=Build_contigencytable(GH_1,"HeartDiseaseorAttack","BMI")
+cont_ss1_HD=cont_ss1_HD[,1:(ncol(cont_ss1_HD)-1)]
+# BP effect on BMI
+GH_1$BMI = as.numeric(GH_1$BMI)
+# contingency table for BP
+cont_ss1_BP=Build_contigencytable(GH_1,"HighBP","BMI")
+cont_ss1_BP=cont_ss1_BP[,1:(ncol(cont_ss1_BP)-1)]
+# Chol effect on BMI
+GH_1$BMI = as.numeric(GH_1$BMI)
+# contingency table for Chol
+cont_ss1_Chol=Build_contigencytable(GH_1,"HighChol","BMI")
+cont_ss1_Chol=cont_ss1_Chol[,1:(ncol(cont_ss1_Chol)-1)]
+
+# no interaction effect on BMI
+GH_1$BMI = as.numeric(GH_1$BMI)
+# contingency table for no interaction
+cont_1=Build_contigencytable(GH_1,"BMI","BMI")
+cont_1=cont_1[nrow(cont_1),1:(ncol(cont_1)-1)]
+
+# make HC Tree of 3 way interaction
+cluster = hclust(dist(cont_ss1))
+plot(cluster,xlab="Heart Disease, Blood Pressure, and Cholesterol", main="Subset 1 - 3 way Interaction Hierarchical Clustering Tree")
+```
+
+This hierarchical clustering tree suggests the potential relationship between each of the three ways heart disease, high blood pressure, and high cholesterol interact in multiple different combinations. Here we can see that leaves closer to each other, share more properties in common. For example, on the left-half of our tree we can see that all the leaves that are connected together have the property of high blood pressure (second values is one). This shows that regardless of if heart disease or high cholesterol interact, individuals with high blood pressure exhibit similar BMI distributions. Another piece of information this tree can guide us towards is the entropy discussion. Adding the "Total" leaf to our tree can help us compare how similar other rows are to our column-sum and better gauge how good each interaction is at predicting the total outcome. We can see that the leaf with the interaction between heart disease, no high blood pressure, and no high cholesterol is very close to our "Total" leaf. Since the proportion distribution outcomes of these two leaves are very similar, the predictability of these variables together can be very low. On the other hand, a leaf further away from the "Total" leaf (ex: heart disease, no high blood pressure, and high cholesterol) may show better predictability.
+
+To examine this further, let's look at the contingency tables for our three way interaction, the two way interactions involving cholesterol, and the one way interaction with only cholesterol. 
+
+```{r,echo=FALSE}
+# run the contingency tables
+print("3 way contingency table")
+cont_ss1
+
+print("HD + Cholesterol contingency table")
+cont_ss1_HD_Chol
+
+print("BP + Cholesterol contingency table")
+cont_ss1_BP_Chol
+
+print("Cholesterol contingency table")
+cont_ss1_Chol
+```
+
+From these contingency tables we can better see the predictability of cholesterol on the overall BMI distribution. For example, in the contingency table for the three way interaction, many of the levels that include a high cholesterol value have proportions smaller than or close to the column sum value. This means high cholesterol may be a good predictor in BMI distribution. Further, if we look into the two-way interaction between heart disease and cholesterol, when the level includes a cholesterol of 1, we see smaller proportion values. These ideas suggests that cholesterol may be a good predictor for BMI distributions. 
+
+To see if this suggestion is true, let's look at the entropy values of each interaction.
+
+```{r, echo=FALSE}
+library(DescTools)
+print("010")
+Entropy(cont_ss1[1,], base=exp(1))
+print("001")
+Entropy(cont_ss1[2,], base=exp(1))
+print("000")
+Entropy(cont_ss1[3,], base=exp(1))
+print("111")
+Entropy(cont_ss1[4,], base=exp(1))
+print("101")
+Entropy(cont_ss1[5,], base=exp(1))
+print("100")
+Entropy(cont_ss1[6,], base=exp(1))
+print("011")
+Entropy(cont_ss1[7,], base=exp(1))
+print("110")
+Entropy(cont_ss1[8,], base=exp(1))
+print("01+")
+Entropy(cont_ss1_HD_BP[1,], base=exp(1))
+print("00+")
+Entropy(cont_ss1_HD_BP[2,], base=exp(1))
+print("11+")
+Entropy(cont_ss1_HD_BP[3,], base=exp(1))
+print("10+")
+Entropy(cont_ss1_HD_BP[4,], base=exp(1))
+print("0+0")
+Entropy(cont_ss1_HD_Chol[1,], base=exp(1))
+print("0+1")
+Entropy(cont_ss1_HD_Chol[2,], base=exp(1))
+print("1+1")
+Entropy(cont_ss1_HD_Chol[3,], base=exp(1))
+print("1+0")
+Entropy(cont_ss1_HD_Chol[4,], base=exp(1))
+print("+10")
+Entropy(cont_ss1_BP_Chol[1,], base=exp(1))
+print("+01")
+Entropy(cont_ss1_BP_Chol[2,], base=exp(1))
+print("+00")
+Entropy(cont_ss1_BP_Chol[3,], base=exp(1))
+print("+11")
+Entropy(cont_ss1_BP_Chol[4,], base=exp(1))
+print("0++")
+Entropy(cont_ss1_HD[1,], base=exp(1))
+print("1++")
+Entropy(cont_ss1_HD[2,], base=exp(1))
+print("+1+")
+Entropy(cont_ss1_BP[1,], base=exp(1))
+print("+0+")
+Entropy(cont_ss1_BP[2,], base=exp(1))
+print("++0")
+Entropy(cont_ss1_Chol[1,], base=exp(1))
+print("++1")
+Entropy(cont_ss1_Chol[2,], base=exp(1))
+print("+++")
+Entropy(cont_ss1[9,], base=exp(1))
+```
+
+From our entropy outputs above, we can see that the levels with some of the lowest entropy values, appear where high cholesterol is found (the third number being "1"). The data points here are highly clustered and show that the input value, or the interaction, is the real reason we are seeing this difference.
+
+## Subset 1 Reliability
+
+Here, we will not return all 27 of the histograms and HC trees as that would be too congested and difficult to read. For subset 1 and all the other subsets, the code to run the other plots can be found in the Rmd file attached. 
+
+From the entropy values above it becomes evident that when some values are added to certain interactions, the entropy value decreases and so does the uncertainty in our data. This can be specifically seen for the interaction between heart disease, no high blood pressure, and high cholesterol and the interaction between heart disease, no high blood pressure, and no high cholesterol. Let's take a look at these interactions and how the entropy values change when more variables are added. 
+
+Here, we look at the entropy distribution of just heart disease, heart disease and high cholesterol, heart disease and not high cholesterol, heart disease and high blood pressure and high cholesterol, and heart disease and high blood pressure and not high cholesterol. Visually seeing these distributions can help tell us if: 
+A) adding the cholesterol variable to the heart disease variable improves BMI category prediction
+B) adding the blood pressure variable to the cholesterol and heart disease variable improves BMI category prediction
+
+```{r, echo=FALSE}
+# multinomial for 1++
+sample1TT = rmultinom(1000,115,cont_ss1_HD[2,])
+A=ncol(sample1TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample1TT[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for Heart Disease',xlab='Entropy')
+cluster = hclust(dist(sample1TT))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for High Cholestorol')
+
+# multinomial for 1+1
+sample1T1 = rmultinom(1000,115,cont_ss1_HD_Chol[3,])
+A=ncol(sample1T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample1T1[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for Heart Disease, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample1T1))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for Heart Disease, High Cholestorol')
+
+# multinomial for 101
+sample101 = rmultinom(1000,115,cont_ss1[5,])
+A=ncol(sample101)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample101[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample101))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy HD, No High BP, High Cholestorol')
+
+# multinomial for 1+0
+sample1T0 = rmultinom(1000,115,cont_ss1_HD_Chol[4,])
+A=ncol(sample1T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample1T0[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for Heart Disease, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample1T0))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for Heart Disease, No High Cholestorol')
+
+# multinomial for 100
+sample100 = rmultinom(1000,115,cont_ss1[6,])
+A=ncol(sample100)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample100[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample100))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, No High Cholestorol')
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+# multinomial for 01+
+sample01T = rmultinom(1000,115,cont_ss1_HD_BP[1,])
+A=ncol(sample01T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample01T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No Heart Disease, High Blood Pressure',xlab='Entropy')
+cluster = hclust(dist(sample01T))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No Heart Disease, High Blood Pressure')
+
+# multinomial for 00+
+sample00T = rmultinom(1000,115,cont_ss1_HD_BP[2,])
+A=ncol(sample00T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample00T[,i],base=exp(1))
+}
+hist_00T = hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No Heart Disease, No High Blood Pressure',xlab='Entropy')
+cluster = hclust(dist(sample00T))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No Heart Disease, No High Blood Pressure')
+
+# multinomial for 11+
+sample11T = rmultinom(1000,115,cont_ss1_HD_BP[3,])
+A=ncol(sample11T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample11T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for Heart Disease, High Blood Pressure',xlab='Entropy')
+cluster = hclust(dist(sample11T))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for Heart Disease, High Blood Pressure')
+
+# multinomial for 10+
+sample10T = rmultinom(1000,115,cont_ss1_HD_BP[4,])
+A=ncol(sample10T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample10T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for Heart Disease, No High Blood Pressure',xlab='Entropy')
+cluster = hclust(dist(sample10T))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for Heart Disease, No High Blood Pressure')
+
+# multinomial for 0+0
+sample0T0 = rmultinom(1000,115,cont_ss1_HD_Chol[1,])
+A=ncol(sample0T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample0T0[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No Heart Disease, No High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample0T0))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No Heart Disease, No High Cholestorol')
+
+# multinomial for 0+1
+sample0T1 = rmultinom(1000,115,cont_ss1_HD_Chol[2,])
+A=ncol(sample0T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample0T1[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No Heart Disease, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample0T1))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No Heart Disease, High Cholestorol')
+
+# multinomial for +10
+sampleT10 = rmultinom(1000,115,cont_ss1_BP_Chol[1,])
+A=ncol(sampleT10)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleT10[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for High Blood Pressure, No High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleT10))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for High Blood Pressure, No High Cholestorol')
+
+# multinomial for +01
+sampleT01 = rmultinom(1000,115,cont_ss1_BP_Chol[2,])
+A=ncol(sampleT01)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleT01[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No High Blood Pressure, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleT01))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No High Blood Pressure, High Cholestorol')
+
+# multinomial for +00
+sampleT00 = rmultinom(1000,115,cont_ss1_BP_Chol[3,])
+A=ncol(sampleT00)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleT00[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No High Blood Pressure, No High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleT00))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No High Blood Pressure, No High Cholestorol')
+
+# multinomial for +11
+sampleT11 = rmultinom(1000,115,cont_ss1_BP_Chol[4,])
+A=ncol(sampleT11)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleT11[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for High Blood Pressure, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleT11))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for High Blood Pressure, High Cholestorol')
+
+# multinomial for 0++
+sample0TT = rmultinom(1000,115,cont_ss1_HD[1,])
+A=ncol(sample0TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample0TT[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No Heart Disease',xlab='Entropy')
+cluster = hclust(dist(sample0TT))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No High Cholestorol')
+
+# multinomial for +1+
+sampleT1T = rmultinom(1000,115,cont_ss1_BP[1,])
+A=ncol(sampleT1T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleT1T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for High Blood Pressure',xlab='Entropy')
+cluster = hclust(dist(sampleT1T))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for High Blood Pressure')
+
+# multinomial for +0+
+sampleT0T = rmultinom(1000,115,cont_ss1_BP[2,])
+A=ncol(sampleT0T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleT0T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No High Blood Pressure',xlab='Entropy')
+cluster = hclust(dist(sampleT0T))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for High Blood Pressure')
+
+# multinomial for ++0
+sampleTT0 = rmultinom(1000,115,cont_ss1_Chol[1,])
+A=ncol(sampleTT0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleTT0[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleTT0))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No High Cholestorol')
+
+# multinomial for ++1
+sampleTT1 = rmultinom(1000,115,cont_ss1_Chol[2,])
+A=ncol(sampleTT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleTT1[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleTT1))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for High Cholestorol')
+
+# multinomial for +++
+sampleTTT = rmultinom(1000,115,cont_1)
+A=ncol(sampleTTT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleTTT[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 1 - Histogram of Entropy for No Interaction',xlab='Entropy')
+cluster = hclust(dist(sampleTTT))
+plot(cluster, xlab="MN distribution", main='Subset 1 - Dendogram of Entropy for No Interaction')
+
+# multinomial for 010
+sample010 = rmultinom(1000,115,cont_ss1[1,])
+A=ncol(sample010)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample010[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, No High Cholestorol')
+
+# multinomial for 001
+sample001 = rmultinom(1000,115,cont_ss1[2,])
+A=ncol(sample001)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample001[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample001))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, High Cholestorol')
+
+# multinomial for 000
+sample000 = rmultinom(1000,115,cont_ss1[3,])
+A=ncol(sample000)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample000[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample000))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, No High Cholestorol')
+
+# multinomial for 111
+sample111 = rmultinom(1000,115,cont_ss1[4,])
+A=ncol(sample111)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample111[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample111))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, High Cholestorol')
+
+# multinomial for 100
+sample100 = rmultinom(1000,115,cont_ss1[6,])
+A=ncol(sample100)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample100[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample100))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, No High Cholestorol')
+
+# multinomial for 011
+sample011 = rmultinom(1000,115,cont_ss1[7,])
+A=ncol(sample011)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample011[,i],base=exp(1))
+}
+hist_011 = hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample011))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, High Cholestorol')
+
+# multinomial for 110
+sample110 = rmultinom(1000,115,cont_ss1[8,])
+A=ncol(sample110)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample110[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample110))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, No High Cholestorol')
+
+# multinomial for ++0
+sampleTT0 = rmultinom(1000,115,cont_ss1_Chol[1,])
+A=ncol(sampleTT0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleTT0[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleTT0))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No High Cholestorol')
+
+# multinomial for ++1
+sampleTT1 = rmultinom(1000,115,cont_ss1_Chol[2,])
+A=ncol(sampleTT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleTT1[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sampleTT1))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for High Cholestorol')
+
+# multinomial for +++
+sampleTTT = rmultinom(1000,115,cont_1)
+A=ncol(sampleTTT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sampleTTT[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No Interaction',xlab='Entropy')
+cluster = hclust(dist(sampleTTT))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No Interaction')
+```
+
+From this we can see that:
+
+A) When cholesterol heart disease interact, our entropy value decreases compared to when only heart disease is taken into account. 
+
+B) When no high blood pressure interacts with the variables above (1+1 and 1+0), our entropy again decreases adding more certainty and predictability in our BMI distributions. 
+
+From this we can see that there appears to be an interaction between heart disease, not high blood pressure, and high cholesterol and an interaction between heart disease, not high blood pressure, and not high cholesterol in subset 1. In addition, when we look ar the HC trees for these distributions, we can see that the 10 BMI categories all appear to be similarly distributed across the different interaction effects.
+
+
+## Subset 2 HC and Entropy Methods
+
+Again, we will start by looking at the hierarchical clustering tree of the 3 way interaction between heart disease, high blood pressure, and high cholesterol. 
+
+```{r, echo=FALSE}
+# 3 way contingency table for subset 2
+GH_2$BMI = as.numeric(GH_2$BMI)
+combined_2 = combineCatVars(GH_2, vars = c('HeartDiseaseorAttack', 'HighBP', 'HighChol'), sep = "_")
+# contingency table for subset 2 
+cont_ss2=Build_contigencytable(combined_2,"HeartDiseaseorAttack_HighBP_HighChol","BMI")
+cont_ss2=cont_ss2[,1:(ncol(cont_ss2)-1)]
+
+# 2 way contingency tables for subset 2
+# HD and BP interaction
+GH_2$BMI = as.numeric(GH_2$BMI)
+combined_2_HD_BP = combineCatVars(GH_2, vars = c('HeartDiseaseorAttack', 'HighBP'), sep = "_")
+# contingency table for HD+BP
+cont_ss2_HD_BP=Build_contigencytable(combined_2_HD_BP,"HeartDiseaseorAttack_HighBP","BMI")
+cont_ss2_HD_BP=cont_ss2_HD_BP[,1:(ncol(cont_ss2_HD_BP)-1)]
+# HD and Chol interaction
+GH_2$BMI = as.numeric(GH_2$BMI)
+combined_2_HD_Chol = combineCatVars(GH_2, vars = c('HeartDiseaseorAttack', 'HighChol'), sep = "_")
+# contingency table for HD+Chol
+cont_ss2_HD_Chol=Build_contigencytable(combined_2_HD_Chol,"HeartDiseaseorAttack_HighChol","BMI")
+cont_ss2_HD_Chol=cont_ss2_HD_Chol[,1:(ncol(cont_ss2_HD_Chol)-1)]
+# BP and Chol distribution
+GH_2$BMI = as.numeric(GH_2$BMI)
+combined_2_BP_Chol = combineCatVars(GH_2, vars = c('HighBP', 'HighChol'), sep = "_")
+# contingency table for BP+Chol
+cont_ss2_BP_Chol=Build_contigencytable(combined_2_BP_Chol,"HighBP_HighChol","BMI")
+cont_ss2_BP_Chol=cont_ss2_BP_Chol[,1:(ncol(cont_ss2_BP_Chol)-1)]
+
+# one way interactions for subset 2
+# HD effect on BMI
+GH_2$BMI = as.numeric(GH_2$BMI)
+# contingency table for HD
+cont_ss2_HD=Build_contigencytable(GH_2,"HeartDiseaseorAttack","BMI")
+cont_ss2_HD=cont_ss2_HD[,1:(ncol(cont_ss2_HD)-1)]
+# BP effect on BMI
+GH_2$BMI = as.numeric(GH_2$BMI)
+# contingency table for BP
+cont_ss2_BP=Build_contigencytable(GH_2,"HighBP","BMI")
+cont_ss2_BP=cont_ss2_BP[,1:(ncol(cont_ss2_BP)-1)]
+# Chol effect on BMI
+GH_2$BMI = as.numeric(GH_2$BMI)
+# contingency table for Chol
+cont_ss2_Chol=Build_contigencytable(GH_2,"HighChol","BMI")
+cont_ss2_Chol=cont_ss2_Chol[,1:(ncol(cont_ss2_Chol)-1)]
+
+# no interaction effect on BMI
+GH_2$BMI = as.numeric(GH_2$BMI)
+# contingency table for no interaction
+cont_2=Build_contigencytable(GH_2,"BMI","BMI")
+cont_2=cont_2[nrow(cont_2),1:(ncol(cont_2)-1)]
+
+clusters = hclust(dist(cont_ss2))
+plot(clusters, xlab="Heart Disease, Blood Pressure, and Cholestrol Interactions",main="Subset 2 - 3 way Interaction Hierarchical Clustering Tree")
+```
+
+From our tree, we can see that there are two main groups that are clustered closer together - one group where everyone has high blood pressure and one group where everyone does not have high blood pressure. This similarity suggests the potential strength and effect blood pressure has. Additionally, the group of leaves that have high blood pressure as one of their levels is further away from the "Total" leaf indicating that blood pressure might be useful in predicting a BMI distribution. 
+
+We will take a look at this further by looking at the contingency tables for the 3 way interactions, the two way interactions involving blood pressure, and the contingency table with only blood pressure. 
+
+```{r, echo = FALSE}
+print("3 way contingency table")
+cont_ss2
+
+print("HD + BP contingency table")
+cont_ss2_HD_BP
+
+print("BP + Cholesterol contingency table")
+cont_ss2_BP_Chol
+
+print("Blood pressure contingency table")
+cont_ss2_BP
+```
+
+From the 3 way contingency table we can see that for each BMI category, all levels that have high blood pressure appear to be greater than or less than the column sum for the same categories. Looking one step further into the two way interaction between Heart Disease or Cholesterol with Blood Pressure, we again see this general pattern across all BMI distributions. Finally, looking at Blood Pressure alone, we can see that there appears to be a similar distribution of proportions and similarities as the other three contigency tables above. 
+
+To see if this suggestion is true, let's look at the entropy values of each interaction.
+
+```{r, echo=FALSE}
+print("010")
+Entropy(cont_ss2[1,], base=exp(1))
+print("011")
+Entropy(cont_ss2[2,], base=exp(1))
+print("000")
+Entropy(cont_ss2[3,], base=exp(1))
+print("001")
+Entropy(cont_ss2[4,], base=exp(1))
+print("111")
+Entropy(cont_ss2[5,], base=exp(1))
+print("100")
+Entropy(cont_ss2[6,], base=exp(1))
+print("110")
+Entropy(cont_ss2[7,], base=exp(1))
+print("101")
+Entropy(cont_ss2[8,], base=exp(1))
+print("01+")
+Entropy(cont_ss2_HD_BP[1,], base=exp(1))
+print("00+")
+Entropy(cont_ss2_HD_BP[2,], base=exp(1))
+print("11+")
+Entropy(cont_ss2_HD_BP[3,], base=exp(1))
+print("10+")
+Entropy(cont_ss2_HD_BP[4,], base=exp(1))
+print("0+0")
+Entropy(cont_ss2_HD_Chol[1,], base=exp(1))
+print("0+1")
+Entropy(cont_ss2_HD_Chol[2,], base=exp(1))
+print("1+1")
+Entropy(cont_ss2_HD_Chol[3,], base=exp(1))
+print("1+0")
+Entropy(cont_ss2_HD_Chol[4,], base=exp(1))
+print("+10")
+Entropy(cont_ss2_BP_Chol[1,], base=exp(1))
+print("+11")
+Entropy(cont_ss2_BP_Chol[2,], base=exp(1))
+print("+00")
+Entropy(cont_ss2_BP_Chol[3,], base=exp(1))
+print("+01")
+Entropy(cont_ss2_BP_Chol[4,], base=exp(1))
+print("0++")
+Entropy(cont_ss2_HD[1,], base=exp(1))
+print("1++")
+Entropy(cont_ss2_HD[2,], base=exp(1))
+print("+1+")
+Entropy(cont_ss2_BP[1,], base=exp(1))
+print("+0+")
+Entropy(cont_ss2_BP[2,], base=exp(1))
+print("++0")
+Entropy(cont_ss2_Chol[1,], base=exp(1))
+print("++1")
+Entropy(cont_ss2_Chol[2,], base=exp(1))
+print("+++")
+Entropy(cont_ss2[9,], base=exp(1))
+```
+
+From our entropy outputs above, we can see that the levels that produce the two lowest entropies appear to be the three way interaction where the person has HD, no high BP, and high cholesterol and the two way interaction where the person has no high BP and high cholesterol. This suggests that there is an interaction between having low blood pressure and high cholesterol on the overall BMI distribution. 
+
+
+## Subset 2 Reliability
+
+Again, we will not return all 27 histograms and clustering trees, and only look at how no heart disease (0++), heart disease (1++),the interaction between heart disease and not high cholesterol or high cholesterol (1+0 and 1+1), the interaction between no heart disease with high cholesterol (0+1), and the interaction of not high blood pressure with the above 3 two variable interactions (001, 100, 101) affect the BMI distribution.
+
+We choose these variables as they appear to have the biggest changes in entropy when new variables are added to an interaction. Let's look at the multinomial distributions for these values to see if predictability of the BMI changes with new variables.
+
+```{r, echo = FALSE}
+# multinomial for 0++
+sample20TT = rmultinom(1000,115,cont_ss2_HD[1,])
+A=ncol(sample20TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample20TT[,i],base=exp(1))
+}
+hist_20TT = hist(entropies, breaks = 10, main='Histogram of Entropy for No Heart Disease',xlab='Entropy')
+
+# multinomial for 1++
+sample21TT = rmultinom(1000,115,cont_ss2_HD[2,])
+A=ncol(sample21TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample21TT[,i],base=exp(1))
+}
+hist_21TT = hist(entropies, breaks = 10, main='Histogram of Entropy for Heart Disease',xlab='Entropy')
+
+# multinomial for 1+1
+sample21T1 = rmultinom(1000,115,cont_ss2_HD_Chol[3,])
+A=ncol(sample21T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample21T1[,i],base=exp(1))
+}
+hist_21T1 = hist(entropies, breaks = 10, main='Histogram of Entropy for Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 1+0
+sample21T0 = rmultinom(1000,115,cont_ss2_HD_Chol[4,])
+A=ncol(sample21T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample21T0[,i],base=exp(1))
+}
+hist_21T0 = hist(entropies, breaks = 10, main='Histogram of Entropy for Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for 0+1
+sample20T1 = rmultinom(1000,115,cont_ss2_HD_Chol[2,])
+A=ncol(sample20T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample20T1[,i],base=exp(1))
+}
+hist_20T1 = hist(entropies, breaks = 10, main='Histogram of Entropy for No Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 001
+sample2001 = rmultinom(1000,115,cont_ss2[4,])
+A=ncol(sample2001)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2001[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, High Cholestorol')
+
+# multinomial for 100
+sample2100 = rmultinom(1000,115,cont_ss2[6,])
+A=ncol(sample2100)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2100[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample2100))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, No High Cholestorol')
+
+# multinomial for 101
+sample2101 = rmultinom(1000,115,cont_ss2[8,])
+A=ncol(sample2101)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2101[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample2101))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, High Cholestorol')
+```
+
+```{r, echo=FALSE, include=FALSE}
+# multinomial for 010
+sample2010 = rmultinom(1000,115,cont_ss2[1,])
+A=ncol(sample2010)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2010[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, No High Cholestorol',xlab='Entropy', cex.main=0.6)
+cluster = hclust(dist(sample2010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, No High Cholestorol')
+
+# multinomial for 011
+sample2011 = rmultinom(1000,115,cont_ss2[2,])
+A=ncol(sample2011)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2011[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample2011))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, High Cholestorol')
+
+# multinomial for 000
+sample2000 = rmultinom(1000,115,cont_ss2[3,])
+A=ncol(sample2000)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2000[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, No High Cholestorol')
+
+# multinomial for 111
+sample2111 = rmultinom(1000,115,cont_ss2[5,])
+A=ncol(sample2111)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2111[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample2111))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, High Cholestorol')
+
+# multinomial for 110
+sample2110 = rmultinom(1000,115,cont_ss2[7,])
+A=ncol(sample2110)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2110[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample2110))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, No High Cholestorol')
+
+# multinomial for +01
+sample2T01 = rmultinom(1000,115,cont_ss2_BP_Chol[4,])
+A=ncol(sample2T01)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2T01[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No High Blood Pressure, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No High Blood Pressure, High Cholestorol')
+
+# multinomial for 00+
+sample200T = rmultinom(1000,115,cont_ss2_HD_BP[2,])
+A=ncol(sample200T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample200T[,i],base=exp(1))
+}
+hist_200T = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for No Heart Disease, No High Blood Pressure',xlab='Entropy')
+
+# multinomial for 11+
+sample211T = rmultinom(1000,115,cont_ss2_HD_BP[3,])
+A=ncol(sample211T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample211T[,i],base=exp(1))
+}
+hist_211T = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 10+
+sample210T = rmultinom(1000,115,cont_ss2_HD_BP[4,])
+A=ncol(sample210T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample210T[,i],base=exp(1))
+}
+hist_210T = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for Heart Disease, No High Blood Pressure',xlab='Entropy')
+
+# multinomial for 0+0
+sample20T0 = rmultinom(1000,115,cont_ss2_HD_Chol[1,])
+A=ncol(sample20T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample20T0[,i],base=exp(1))
+}
+hist_20T0 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for No Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +10
+sample2T10 = rmultinom(1000,115,cont_ss2_BP_Chol[1,])
+A=ncol(sample2T10)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2T10[,i],base=exp(1))
+}
+hist_T10 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +11
+sample2T11 = rmultinom(1000,115,cont_ss2_BP_Chol[2,])
+A=ncol(sample2T11)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2T11[,i],base=exp(1))
+}
+hist_2T11 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for High Blood Pressure, High Cholesterol',xlab='Entropy')
+
+# multinomial for +00
+sample2T00 = rmultinom(1000,115,cont_ss2_BP_Chol[3,])
+A=ncol(sample2T00)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2T00[,i],base=exp(1))
+}
+hist_2T00 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for No High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +1+
+sample2T1T = rmultinom(1000,115,cont_ss2_BP[1,])
+A=ncol(sample2T1T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2T1T[,i],base=exp(1))
+}
+hist_T1T = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for High Blood Pressure',xlab='Entropy')
+
+# multinomial for +0+
+sample2T0T = rmultinom(1000,115,cont_ss2_BP[2,])
+A=ncol(sample2T0T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2T0T[,i],base=exp(1))
+}
+hist_2T0T = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for No High Blood Pressure',xlab='Entropy')
+
+# multinomial for ++0
+sample2TT0 = rmultinom(1000,115,cont_ss2_Chol[1,])
+A=ncol(sample2TT0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2TT0[,i],base=exp(1))
+}
+hist_2TT0 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for No High Cholesterol',xlab='Entropy')
+
+# multinomial for ++1
+sample2TT1 = rmultinom(1000,115,cont_ss2_Chol[2,])
+A=ncol(sample2TT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2TT1[,i],base=exp(1))
+}
+hist_2TT1 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for High Cholesterol',xlab='Entropy')
+
+# multinomial for +++
+sample2TTT = rmultinom(1000,115,cont_2)
+A=ncol(sample2TTT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample2TTT[,i],base=exp(1))
+}
+hist_2TT0 = hist(entropies, breaks = 10, main='Subset 2 - Histogram of Entropy for No Interaction',xlab='Entropy')
+```
+
+From this we can see that: 
+
+A) When high cholesterol is added to the no heart disease variable, we see the entropy decrease initially. Then when we add no high blood pressure, we see the entropy value drop again. Since the entropy value decreases, this means our predictability of BMIs increase and thus there appears to be an interaction between these variables.
+
+B) When no high cholesterol is added to the heart disease variable, we see that the entropy decreases slightly. It decreases again when we add the no high blood pressure variable to this level. With the decreasing entropy we see an increase in predictability and the interaction between the variables in the overall BMI distribution. 
+
+C) When high cholesterol is added to the heart disease variable, we again see that the entropy decreases. The entropy decreases again when we add the no hgih blood pressure variable. This means there is better predictability when cholesterol and then no high blood pressure is added to our originial heart disease variable and thus an interaction. 
+
+Looking at the Multinomial distribution histograms and the hierarchical clustering trees, we can see that they all appear normally distributed with trees emulating similar clusters across all groups. This suggests that our entropy information and trees from above are measures suitable for determining if there are potential interactions that affect BMI distributions. 
+
+
+## Subset 3 HC and Entropy Methods
+
+Here, we will also start by looking at the hierarchical clustering tree of the 3 way interaction between heart disease, high blood pressure, and high cholesterol.
+
+```{r, echo=FALSE}
+# combined variable for subset 3
+GH_3$BMI = as.numeric(GH_3$BMI)
+combined_3 = combineCatVars(GH_3, vars = c('HeartDiseaseorAttack', 'HighBP', 'HighChol'), sep = "_")
+# contingency table for subset 3 
+cont_ss3=Build_contigencytable(combined_3,"HeartDiseaseorAttack_HighBP_HighChol","BMI",)
+cont_ss3=cont_ss3[,1:(ncol(cont_ss3)-1)]
+
+# 2 way contingency tables for subset 2
+# HD and BP interaction
+GH_3$BMI = as.numeric(GH_3$BMI)
+combined_3_HD_BP = combineCatVars(GH_3, vars = c('HeartDiseaseorAttack', 'HighBP'), sep = "_")
+# contingency table for HD+BP
+cont_ss3_HD_BP=Build_contigencytable(combined_3_HD_BP,"HeartDiseaseorAttack_HighBP","BMI")
+cont_ss3_HD_BP=cont_ss3_HD_BP[,1:(ncol(cont_ss3_HD_BP)-1)]
+# HD and Chol interaction
+GH_3$BMI = as.numeric(GH_3$BMI)
+combined_3_HD_Chol = combineCatVars(GH_3, vars = c('HeartDiseaseorAttack', 'HighChol'), sep = "_")
+# contingency table for HD+Chol
+cont_ss3_HD_Chol=Build_contigencytable(combined_3_HD_Chol,"HeartDiseaseorAttack_HighChol","BMI")
+cont_ss3_HD_Chol=cont_ss3_HD_Chol[,1:(ncol(cont_ss3_HD_Chol)-1)]
+# BP and Chol interaction
+GH_3$BMI = as.numeric(GH_3$BMI)
+combined_3_BP_Chol = combineCatVars(GH_3, vars = c('HighBP', 'HighChol'), sep = "_")
+# contingency table for BP+Chol
+cont_ss3_BP_Chol=Build_contigencytable(combined_3_BP_Chol,"HighBP_HighChol","BMI")
+cont_ss3_BP_Chol=cont_ss3_BP_Chol[,1:(ncol(cont_ss3_BP_Chol)-1)]
+
+# one way interactions for subset 2
+# HD effect on BMI
+GH_3$BMI = as.numeric(GH_3$BMI)
+# contingency table for HD
+cont_ss3_HD=Build_contigencytable(GH_3,"HeartDiseaseorAttack","BMI")
+cont_ss3_HD=cont_ss3_HD[,1:(ncol(cont_ss3_HD)-1)]
+# BP effect on BMI
+GH_3$BMI = as.numeric(GH_3$BMI)
+# contingency table for BP
+cont_ss3_BP=Build_contigencytable(GH_3,"HighBP","BMI")
+cont_ss3_BP=cont_ss3_BP[,1:(ncol(cont_ss3_BP)-1)]
+# Chol effect on BMI
+GH_3$BMI = as.numeric(GH_3$BMI)
+# contingency table for Chol
+cont_ss3_Chol=Build_contigencytable(GH_3,"HighChol","BMI")
+cont_ss3_Chol=cont_ss3_Chol[,1:(ncol(cont_ss3_Chol)-1)]
+
+# no interaction effect on BMI
+GH_3$BMI = as.numeric(GH_3$BMI)
+# contingency table for no interaction
+cont_3=Build_contigencytable(GH_3,"BMI","BMI")
+cont_3=cont_3[nrow(cont_3),1:(ncol(cont_3)-1)]
+
+clusters = hclust(dist(cont_ss3))
+plot(clusters, xlab="Heart Disease, Blood Pressure, and Cholestrol Interactions",main="Subset 3 - 3 way Interaction Hierarchical Clustering Tree")
+```
+
+Similar to subset 2, we again see leaves with high blood pressure grouped together and leaves with no high blood pressure grouped together. This could mean blood pressure is again a factor of BMI distribution differences. Here we also see the "Total" leaf being close to the leaf with Heart Disease, High Blood Pressure, High Cholesterol and the leaf with Heart Disease, High Blood Pressure, and no High Cholesterol. This could mean that these leaves are not very good at predicting the BMI distributions and that cholesterol may play some effect in this predictability. 
+
+To see this further we will run the contingency tables for the 3 way interaction, the two way interaction between heart disease and cholesterol, and the one way interaction of cholesterol.
+
+```{r, echo=FALSE}
+print("3 way contingency table")
+cont_ss3
+print("HD + Chol contingency table")
+cont_ss3_HD_Chol
+print("BP + Chol contingency table")
+cont_ss3_BP_Chol
+print("Cholesterol Contingency table")
+cont_ss3_Chol
+print("High Blood Pressure Contingency table")
+cont_ss3_BP
+```
+
+From our three way table we can see that row 101, or Heart Disease, No High Blood Pressure, and High Cholesterol, has smaller proportions compared to our column-sum value indicating a potential interaction between these variables. Further, looking into  the two way interactions involving high cholesterol, we can see that regardless of their interaction variable High Cholesterol and High Blood Pressure produce proportions that are much smaller than the row sum. From here, we will look at the interactions of blood pressure and high cholesterol alone. Here we can see that while the proportions for high cholesterol stay consistently lower than our row sum, both rows of the blood pressure table fluctuate. This suggests the strength cholesterol has on the BMI distribution. 
+
+Let's look at the entropy values to further investigate. 
+
+```{r, echo=FALSE}
+print("000")
+Entropy(cont_ss3[1,], base=exp(1))
+print("010")
+Entropy(cont_ss3[2,], base=exp(1))
+print("011")
+Entropy(cont_ss3[3,], base=exp(1))
+print("111")
+Entropy(cont_ss3[4,], base=exp(1))
+print("001")
+Entropy(cont_ss3[5,], base=exp(1))
+print("101")
+Entropy(cont_ss3[6,], base=exp(1))
+print("100")
+Entropy(cont_ss3[7,], base=exp(1))
+print("110")
+Entropy(cont_ss3[8,], base=exp(1))
+print("00+")
+Entropy(cont_ss3_HD_BP[1,], base=exp(1))
+print("01+")
+Entropy(cont_ss3_HD_BP[2,], base=exp(1))
+print("11+")
+Entropy(cont_ss3_HD_BP[3,], base=exp(1))
+print("10+")
+Entropy(cont_ss3_HD_BP[4,], base=exp(1))
+print("0+0")
+Entropy(cont_ss3_HD_Chol[1,], base=exp(1))
+print("0+1")
+Entropy(cont_ss3_HD_Chol[2,], base=exp(1))
+print("1+1")
+Entropy(cont_ss3_HD_Chol[3,], base=exp(1))
+print("1+0")
+Entropy(cont_ss3_HD_Chol[4,], base=exp(1))
+print("+00")
+Entropy(cont_ss3_BP_Chol[1,], base=exp(1))
+print("+10")
+Entropy(cont_ss3_BP_Chol[2,], base=exp(1))
+print("+11")
+Entropy(cont_ss3_BP_Chol[3,], base=exp(1))
+print("+01")
+Entropy(cont_ss3_BP_Chol[4,], base=exp(1))
+print("0++")
+Entropy(cont_ss3_HD[1,], base=exp(1))
+print("1++")
+Entropy(cont_ss3_HD[2,], base=exp(1))
+print("+0+")
+Entropy(cont_ss3_BP[1,], base=exp(1))
+print("+1+")
+Entropy(cont_ss3_BP[2,], base=exp(1))
+print("++0")
+Entropy(cont_ss3_Chol[1,], base=exp(1))
+print("++1")
+Entropy(cont_ss3_Chol[2,], base=exp(1))
+print("+++")
+Entropy(cont_ss3[9,], base=exp(1))
+```
+
+From our entropy values, here we can see our original investigation on cholesterol solely was not far from incorrect. The value with the smallest entropy happens to be 101, heart disease, no high blood pressure, and high cholesterol, which involves high cholesterol. To see if this interaction conclusion, and thus the entropy calculations, is reliable, we will move on to reliability. 
+
+
+## Subset 3 Reliability
+
+Again, we will not return all 27 plots for this subset. For subset 3 we will look at the single effect of heart disease or no heart disease and high blood pressure. Then we will add high cholesterol to our no heart disease and heart disease variable and high cholesterol to our high blood pressure variable. Finally, we will add low blood pressure to our first two two-way interaction variables and heart disease to our last two-way interaction variable. To see the entropy distributions for these graphs and to see if there really is an interaction between these variables we will run the following distributions: 0++, 0+1, 001, 1++, 1+1, 101, +1+, +11, 111
+
+```{r, echo=FALSE}
+# multinomial for 0++
+sample30TT = rmultinom(1000,115,cont_ss3_HD[1,])
+A=ncol(sample30TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample30TT[,i],base=exp(1))
+}
+hist_30TT = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Heart Disease',xlab='Entropy')
+
+# multinomial for 0+1
+sample30T1 = rmultinom(1000,115,cont_ss3_HD_Chol[2,])
+A=ncol(sample30T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample30T1[,i],base=exp(1))
+}
+hist_30T1 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 001
+sample3001 = rmultinom(1000,115,cont_ss3[5,])
+A=ncol(sample3001)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3001[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3001))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, High Cholestorol')
+
+# multinomial for 1++
+sample31TT = rmultinom(1000,115,cont_ss3_HD[2,])
+A=ncol(sample31TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample31TT[,i],base=exp(1))
+}
+hist_31TT = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for Heart Disease',xlab='Entropy')
+
+# multinomial for 1+1
+sample31T1 = rmultinom(1000,115,cont_ss3_HD_Chol[3,])
+A=ncol(sample31T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample31T1[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample31T1))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High Cholestorol')
+
+# multinomial for 101
+sample3101 = rmultinom(1000,115,cont_ss3[6,])
+A=ncol(sample3101)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3101[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3101))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, High Cholestorol')
+
+# multinomial for +1+
+sample3T1T = rmultinom(1000,115,cont_ss3_BP[2,])
+A=ncol(sample3T1T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3T1T[,i],base=exp(1))
+}
+hist_3T1T = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for High Blood Pressure',xlab='Entropy')
+
+# multinomial for +11
+sample3T11 = rmultinom(1000,115,cont_ss3_BP_Chol[3,])
+A=ncol(sample3T11)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3T11[,i],base=exp(1))
+}
+hist_3T11 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for High Blood Pressure, High Cholesterol',xlab='Entropy')
+
+# multinomial for 111
+sample3111 = rmultinom(1000,115,cont_ss3[4,])
+A=ncol(sample3111)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3111[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3111))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for  HD, High BP,  High Cholestorol')
+```
+
+```{r, echo=FALSE, include=FALSE}
+# multinomial for 000
+sample3000 = rmultinom(1000,115,cont_ss3[1,])
+A=ncol(sample3000)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3000[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3000))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, No High Cholestorol')
+
+# multinomial for 010
+sample3010 = rmultinom(1000,115,cont_ss3[2,])
+A=ncol(sample3010)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3010[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, No High Cholestorol')
+
+# multinomial for 011
+sample3011 = rmultinom(1000,115,cont_ss3[3,])
+A=ncol(sample3011)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3011[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3011))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, High Cholestorol')
+
+# multinomial for 100
+sample3100 = rmultinom(1000,115,cont_ss3[7,])
+A=ncol(sample3100)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3100[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3100))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, High Cholestorol')
+
+# multinomial for 110
+sample3110 = rmultinom(1000,115,cont_ss3[8,])
+A=ncol(sample3110)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3110[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample3110))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, No High Cholestorol')
+
+# multinomial for 10+
+sample310T = rmultinom(1000,115,cont_ss3_HD_BP[4,])
+A=ncol(sample310T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample310T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP',xlab='Entropy')
+cluster = hclust(dist(sample310T))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP')
+
+# multinomial for 00+
+sample300T = rmultinom(1000,115,cont_ss3_HD_BP[1,])
+A=ncol(sample300T)
+# initialize a vector to save all entropies
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample300T[,i],base=exp(1))
+}
+hist_300T = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Heart Disease, No High Blood Pressure',xlab='Entropy')
+
+# multinomial for 01+
+sample301T = rmultinom(1000,115,cont_ss3_HD_BP[2,])
+A=ncol(sample301T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample301T[,i],base=exp(1))
+}
+hist_301T = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 11+
+sample311T = rmultinom(1000,115,cont_ss3_HD_BP[3,])
+A=ncol(sample311T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample311T[,i],base=exp(1))
+}
+hist_311T = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 0+0
+sample30T0 = rmultinom(1000,115,cont_ss3_HD_Chol[1,])
+A=ncol(sample30T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample30T0[,i],base=exp(1))
+}
+hist_20T0 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for 1+0
+sample31T0 = rmultinom(1000,115,cont_ss3_HD_Chol[4,])
+A=ncol(sample31T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample31T0[,i],base=exp(1))
+}
+hist_31T0 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +00
+sample3T00 = rmultinom(1000,115,cont_ss3_BP_Chol[1,])
+A=ncol(sample3T00)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3T00[,i],base=exp(1))
+}
+hist_3T00 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +10
+sample3T10= rmultinom(1000,115,cont_ss3_BP_Chol[2,])
+A=ncol(sample3T10)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3T10[,i],base=exp(1))
+}
+hist_2T11 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +01
+sample3T01 = rmultinom(1000,115,cont_ss3_BP_Chol[4,])
+A=ncol(sample3T01)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3T01[,i],base=exp(1))
+}
+hist_3T01 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No High Blood Pressure, High Cholesterol',xlab='Entropy')
+
+# multinomial for +0+
+sample3T0T = rmultinom(1000,115,cont_ss3_BP[1,])
+A=ncol(sample3T0T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3T0T[,i],base=exp(1))
+}
+hist_2T0T = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No High Blood Pressure',xlab='Entropy')
+
+# multinomial for ++0
+sample3TT0 = rmultinom(1000,115,cont_ss3_Chol[1,])
+A=ncol(sample3TT0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3TT0[,i],base=exp(1))
+}
+hist_3TT0 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No High Cholesterol',xlab='Entropy')
+
+# multinomial for ++1
+sample3TT1 = rmultinom(1000,115,cont_ss3_Chol[2,])
+A=ncol(sample3TT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3TT1[,i],base=exp(1))
+}
+hist_3TT1 = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for High Cholesterol',xlab='Entropy')
+
+# multinomial for +++
+sample3TTT = rmultinom(1000,115,cont_3)
+A=ncol(sample3TTT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample3TTT[,i],base=exp(1))
+}
+hist_3TTT = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Interaction',xlab='Entropy')
+```
+
+From these graphs we can see the following:
+
+A) When we add high cholesterol to no heart disease our entropy value decreases. This indicates that there is a two-way interaction between no heart disease and high cholesterol. Going one step further and adding the no high blood pressure variable to this interaction decreases the entropy once again. This indicates a three way interaction between these three variables due to the increase in predictability due to lower entropy values. 
+
+B) When we add the high cholesterol variable to the heart disease variable we see that the entropy decreases indicating an interaction between these variables Going one step further, we see that adding the not high blood pressure variable to this interaction decreases the entropy again. Therefore, we can say that there appears to be an interaction between heart disease, no high blood pressure, and high cholesterol. 
+
+C)When we add high cholesterol to our high blood pressure variable our entropy initially decreases indicating the interaction between these two variables. Further, if we add the heart disease variable the entropy variable decreases again indicating a interaction between heart disease, high blood pressure, and high cholesterol. 
+
+With the HC Trees we ran, we also see that the distributions of the different columns remain relatively similar concluding our reliability analysis. 
+
+
+## Subset 4 HC and Entropy Methods
+
+Let's again begin by looking at the hierarchical clustering tree of the 3 way interaction between heart disease, high blood pressure, and high cholesterol.
+
+```{r, echo=FALSE}
+# combined variable for subset 4
+GH_4$BMI = as.numeric(GH_4$BMI)
+combined_4 = combineCatVars(GH_4, vars = c('HeartDiseaseorAttack', 'HighBP', 'HighChol'), sep = "_")
+# contingency table for subset 4 
+cont_ss4=Build_contigencytable(combined_4,"HeartDiseaseorAttack_HighBP_HighChol","BMI")
+cont_ss4=cont_ss4[,1:(ncol(cont_ss4)-1)]
+
+# 2 way contingency tables for subset 2
+# HD and BP interaction
+GH_4$BMI = as.numeric(GH_4$BMI)
+combined_4_HD_BP = combineCatVars(GH_4, vars = c('HeartDiseaseorAttack', 'HighBP'), sep = "_")
+# contingency table for HD+BP
+cont_ss4_HD_BP=Build_contigencytable(combined_4_HD_BP,"HeartDiseaseorAttack_HighBP","BMI")
+cont_ss4_HD_BP=cont_ss4_HD_BP[,1:(ncol(cont_ss4_HD_BP)-1)]
+# HD and Chol interaction
+GH_4$BMI = as.numeric(GH_4$BMI)
+combined_4_HD_Chol = combineCatVars(GH_4, vars = c('HeartDiseaseorAttack', 'HighChol'), sep = "_")
+# contingency table for HD+Chol
+cont_ss4_HD_Chol=Build_contigencytable(combined_4_HD_Chol,"HeartDiseaseorAttack_HighChol","BMI")
+cont_ss4_HD_Chol=cont_ss4_HD_Chol[,1:(ncol(cont_ss4_HD_Chol)-1)]
+# BP and Chol interaction
+GH_4$BMI = as.numeric(GH_4$BMI)
+combined_4_BP_Chol = combineCatVars(GH_4, vars = c('HighBP', 'HighChol'), sep = "_")
+# contingency table for BP+Chol
+cont_ss4_BP_Chol=Build_contigencytable(combined_4_BP_Chol,"HighBP_HighChol","BMI")
+cont_ss4_BP_Chol=cont_ss4_BP_Chol[,1:(ncol(cont_ss4_BP_Chol)-1)]
+
+# one way interactions for subset 2
+# HD effect on BMI
+GH_4$BMI = as.numeric(GH_4$BMI)
+# contingency table for HD
+cont_ss4_HD=Build_contigencytable(GH_4,"HeartDiseaseorAttack","BMI")
+cont_ss4_HD=cont_ss4_HD[,1:(ncol(cont_ss4_HD)-1)]
+# BP effect on BMI
+GH_4$BMI = as.numeric(GH_4$BMI)
+# contingency table for BP
+cont_ss4_BP=Build_contigencytable(GH_4,"HighBP","BMI")
+cont_ss4_BP=cont_ss4_BP[,1:(ncol(cont_ss4_BP)-1)]
+# Chol effect on BMI
+GH_4$BMI = as.numeric(GH_4$BMI)
+# contingency table for Chol
+cont_ss4_Chol=Build_contigencytable(GH_4,"HighChol","BMI")
+cont_ss4_Chol=cont_ss4_Chol[,1:(ncol(cont_ss4_Chol)-1)]
+
+# no interaction effect on BMI
+GH_4$BMI = as.numeric(GH_4$BMI)
+# contingency table for no interaction
+cont_4=Build_contigencytable(GH_4,"BMI","BMI")
+cont_4=cont_4[nrow(cont_4),1:(ncol(cont_4)-1)]
+
+clusters = hclust(dist(cont_ss4))
+plot(clusters, xlab="Heart Disease, Blood Pressure, and Cholestrol Interactions",main="Subset 4 - 3 way Interaction Hierarchical Clustering Tree")
+```
+
+Here we can see that again all the groups with similar blood pressure are grouped together similarly in the HC Tree. We also see that this time that the "Total" leaf is right beside the 110 leaf (Heart Disease, High Blood Pressure, No High Cholesterol) showing that this is likely not the interaction effect that will have the biggest effect on BMI distribution. To further investigate these distributions let's look at the contingency tables and compare each proportion to its row sum.
+
+Here we will return the contingency table for the 3 way interaction, the two way interaction between heart disease and cholesterol, and the one way interaction with cholesterol. 
+
+```{r, echo=FALSE}
+print("3 way interaction contingency table")
+cont_ss4
+print("HD + Chol contingency table")
+cont_ss4_HD_Chol
+print("Cholesterol contingency table")
+cont_ss4_Chol
+```
+
+From the contingency tables above we can nicely see the effect cholesterol has on our predictions of BMI distribution. In the three way table, as we move down the row, 101 returns values much smaller than our row-sum indicating a possibility of there being an interaction effect between these variables. Later, when we look at heart disease and cholesterol, this pattern is a little weaker with their being more values that are larger than the column-sum value. This is also seen in the cholesterol contingency table; therefore, suggesting that there may be an interaction between heart disease, no high blood pressure, and high cholesterol on BMI distributions. 
+
+To see this further we will calcualte the entropies for all 27 of our possible interactions. 
+
+```{r, echo=FALSE}
+print("011")
+Entropy(cont_ss4[1,], base=exp(1))
+print("001")
+Entropy(cont_ss4[2,], base=exp(1))
+print("111")
+Entropy(cont_ss4[3,], base=exp(1))
+print("000")
+Entropy(cont_ss4[4,], base=exp(1))
+print("010")
+Entropy(cont_ss4[5,], base=exp(1))
+print("101")
+Entropy(cont_ss4[6,], base=exp(1))
+print("100")
+Entropy(cont_ss4[7,], base=exp(1))
+print("110")
+Entropy(cont_ss4[8,], base=exp(1))
+print("01+")
+Entropy(cont_ss4_HD_BP[1,], base=exp(1))
+print("00+")
+Entropy(cont_ss4_HD_BP[2,], base=exp(1))
+print("11+")
+Entropy(cont_ss4_HD_BP[3,], base=exp(1))
+print("10+")
+Entropy(cont_ss4_HD_BP[4,], base=exp(1))
+print("0+1")
+Entropy(cont_ss4_HD_Chol[1,], base=exp(1))
+print("1+1")
+Entropy(cont_ss4_HD_Chol[2,], base=exp(1))
+print("0+0")
+Entropy(cont_ss4_HD_Chol[3,], base=exp(1))
+print("1+0")
+Entropy(cont_ss4_HD_Chol[4,], base=exp(1))
+print("+11")
+Entropy(cont_ss4_BP_Chol[1,], base=exp(1))
+print("+01")
+Entropy(cont_ss4_BP_Chol[2,], base=exp(1))
+print("+00")
+Entropy(cont_ss4_BP_Chol[3,], base=exp(1))
+print("+10")
+Entropy(cont_ss4_BP_Chol[4,], base=exp(1))
+print("0++")
+Entropy(cont_ss4_HD[1,], base=exp(1))
+print("1++")
+Entropy(cont_ss4_HD[2,], base=exp(1))
+print("+1+")
+Entropy(cont_ss4_BP[1,], base=exp(1))
+print("+0+")
+Entropy(cont_ss4_BP[2,], base=exp(1))
+print("++1")
+Entropy(cont_ss4_Chol[1,], base=exp(1))
+print("++0")
+Entropy(cont_ss4_Chol[2,], base=exp(1))
+print("+++")
+Entropy(cont_ss4[9,], base=exp(1))
+```
+
+From the entropy calculations, we can see that 101, heart disease, no high blood pressure, and high cholesterol, has the lowest entropy values. This indicates that it has high predictability and interacts together to cause this. We also see a small value of entropy for 10+ (interaction between heart disease and no high blood pressure), but 101 is the smallest value. To visually see these distributions, let's look at the reliability. 
+
+## Subset 4 Reliability 
+
+As for the other 3 subsets, we will not return all 27 plots for this subset. The potential interaction and variables that we see are very similar to that of subset 3. We  will start by looking at the single effect of heart disease or no heart disease and high blood pressure. Then we will add high cholesterol to our no heart disease and heart disease variable and high cholesterol to our high blood pressure variable. Finally, we will add low blood pressure to our first two two-way interaction variables and heart disease to our last two-way interaction variable. To see the entropy distributions for these graphs we will run the following distributions: 0++, 0+1, 001, 1++, 1+1, 101, +1+, +11, 111
+
+```{r, echo=FALSE}
+# multinomial for 0++
+sample40TT = rmultinom(1000,115,cont_ss4_HD[1,])
+A=ncol(sample40TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample40TT[,i],base=exp(1))
+}
+hist_40TT = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No Heart Disease',xlab='Entropy')
+
+# multinomial for 0+1
+sample40T1 = rmultinom(1000,115,cont_ss4_HD_Chol[1,])
+A=ncol(sample40T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample40T1[,i],base=exp(1))
+}
+hist_40T1 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 001
+sample4001 = rmultinom(1000,115,cont_ss4[2,])
+A=ncol(sample4001)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4001[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4001))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP,  High Cholestorol')
+
+# multinomial for 1++
+sample41TT = rmultinom(1000,115,cont_ss4_HD[2,])
+A=ncol(sample41TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample41TT[,i],base=exp(1))
+}
+hist_41TT = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for Heart Disease',xlab='Entropy')
+
+# multinomial for 1+1
+sample41T1 = rmultinom(1000,115,cont_ss4_HD_Chol[2,])
+A=ncol(sample41T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample41T1[,i],base=exp(1))
+}
+hist_41T1 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 101
+sample4101 = rmultinom(1000,115,cont_ss4[6,])
+A=ncol(sample4101)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4101[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4101))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, High Cholestorol')
+
+# multinomial for +1+
+sample4T1T = rmultinom(1000,115,cont_ss4_BP[1,])
+A=ncol(sample4T1T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4T1T[,i],base=exp(1))
+}
+hist_4T1T = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for High Blood Pressure',xlab='Entropy')
+
+# multinomial for +11
+sample4T11 = rmultinom(1000,115,cont_ss4_BP_Chol[1,])
+A=ncol(sample4T11)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4T11[,i],base=exp(1))
+}
+hist_4T11 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for High Blood Pressure, High Cholesterol',xlab='Entropy')
+
+# multinomial for 111
+sample4111 = rmultinom(1000,115,cont_ss4[3,])
+A=ncol(sample4111)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4111[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4111))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, High Cholestorol')
+```
+
+```{r, echo=FALSE, include=FALSE}
+# multinomial for 011
+sample4011 = rmultinom(1000,115,cont_ss4[1,])
+A=ncol(sample4011)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4011[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4011))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, High Cholestorol')
+
+# multinomial for 000
+sample4000 = rmultinom(1000,115,cont_ss4[4,])
+A=ncol(sample4000)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4000[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4000))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, No High Cholestorol')
+
+# multinomial for 010
+sample4010 = rmultinom(1000,115,cont_ss4[5,])
+A=ncol(sample4010)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4010[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, No High Cholestorol')
+
+# multinomial for 100
+sample4100 = rmultinom(1000,115,cont_ss4[7,])
+A=ncol(sample4100)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4100[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4100))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, No High Cholestorol')
+
+# multinomial for 110
+sample4110 = rmultinom(1000,115,cont_ss4[8,])
+A=ncol(sample4110)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4110[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample4110))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, No High Cholestorol')
+
+# multinomial for 10+
+sample410T = rmultinom(1000,115,cont_ss4_HD_BP[4,])
+A=ncol(sample410T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample410T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for HD, No High BP',xlab='Entropy')
+cluster = hclust(dist(sample410T))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP')
+
+# multinomial for 01+
+sample401T = rmultinom(1000,115,cont_ss4_HD_BP[1,])
+A=ncol(sample401T)
+# initialize a vector to save all entropies
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample401T[,i],base=exp(1))
+}
+hist_401T = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 00+
+sample400T = rmultinom(1000,115,cont_ss4_HD_BP[2,])
+A=ncol(sample400T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample400T[,i],base=exp(1))
+}
+hist_400T = hist(entropies, breaks = 10, main='Subset 3 - Histogram of Entropy for No Heart Disease, No High Blood Pressure',xlab='Entropy')
+
+# multinomial for 11+
+sample411T = rmultinom(1000,115,cont_ss4_HD_BP[3,])
+A=ncol(sample411T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample411T[,i],base=exp(1))
+}
+hist_411T = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 0+0
+sample40T0 = rmultinom(1000,115,cont_ss4_HD_Chol[3,])
+A=ncol(sample40T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample40T0[,i],base=exp(1))
+}
+hist_40T0 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for 1+0
+sample41T0 = rmultinom(1000,115,cont_ss4_HD_Chol[4,])
+A=ncol(sample41T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample41T0[,i],base=exp(1))
+}
+hist_41T0 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +01
+sample4T01= rmultinom(1000,115,cont_ss4_BP_Chol[2,])
+A=ncol(sample4T01)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4T01[,i],base=exp(1))
+}
+hist_4T01 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No High Blood Pressure, High Cholesterol',xlab='Entropy')
+
+# multinomial for +00
+sample4T00 = rmultinom(1000,115,cont_ss4_BP_Chol[3,])
+A=ncol(sample4T00)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4T00[,i],base=exp(1))
+}
+hist_4T00 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +10
+sample4T10 = rmultinom(1000,115,cont_ss4_BP_Chol[4,])
+A=ncol(sample4T10)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4T10[,i],base=exp(1))
+}
+hist_4T10 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +0+
+sample4T0T = rmultinom(1000,115,cont_ss4_BP[2,])
+A=ncol(sample4T0T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4T0T[,i],base=exp(1))
+}
+hist_4T0T = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No High Blood Pressure',xlab='Entropy')
+
+# multinomial for ++1
+sample4TT1 = rmultinom(1000,115,cont_ss4_Chol[1,])
+A=ncol(sample4TT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4TT1[,i],base=exp(1))
+}
+hist_4TT1= hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for High Cholesterol',xlab='Entropy')
+
+# multinomial for ++0
+sample4TT0 = rmultinom(1000,115,cont_ss4_Chol[2,])
+A=ncol(sample4TT0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4TT0[,i],base=exp(1))
+}
+hist_4TT0 = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No High Cholesterol',xlab='Entropy')
+
+# multinomial for +++
+sample4TTT = rmultinom(1000,115,cont_4)
+A=ncol(sample4TTT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample4TTT[,i],base=exp(1))
+}
+hist_4TTT = hist(entropies, breaks = 10, main='Subset 4 - Histogram of Entropy for No Interaction',xlab='Entropy')
+```
+
+From these graphs we can see the following:
+
+A) When we add high cholesterol to no heart disease our entropy value decreases. It decreases again when adding the no high blood pressure variable to this interaction. Therefore, adding high cholesterol to no heart disease strengthens our predictions on BMI distributions and adding no high blood pressure to this variable again increases predictability. Therefore, we can say there is a three way interaction between no heart disease, no high blood pressure, and high cholesterol.
+
+B) When we add the high cholesterol variable to the heart disease variable we see that the entropy decreases indicating an interaction between these variables Then, when we add the not high blood pressure variable to this interaction entropy decreases again. Therefore, we can say that there appears to be an interaction between heart disease, no high blood pressure, and high cholesterol. 
+
+C) When we add high cholesterol to our high blood pressure variable our entropy initially decreases indicating the interaction between these two variables. Further, if we add the heart disease variable the entropy variable decreases again indicating a interaction between heart disease, high blood pressure, and high cholesterol. 
+
+With the HC Trees we ran, we also see that the distributions of the different columns look relatively similar. This suggests the normal distribution of our proportional vectors.  
+
+## Subset 5 HC and Entropy Methods
+
+For our final subset, we will also begin by looking at the hierarchical clustering tree of the 3 way interaction between heart disease, high blood pressure, and high cholesterol.
+
+```{r, echo=FALSE}
+# combined variable for subset 5
+GH_5$BMI = as.numeric(GH_5$BMI)
+combined_5 = combineCatVars(GH_5, vars = c('HeartDiseaseorAttack', 'HighBP', 'HighChol'), sep = "_")
+# contingency table for subset 5
+cont_ss5=Build_contigencytable(combined_5,"HeartDiseaseorAttack_HighBP_HighChol","BMI")
+cont_ss5=cont_ss5[,1:(ncol(cont_ss5)-1)]
+
+# 2 way contingency tables for subset 2
+# HD and BP interaction
+GH_5$BMI = as.numeric(GH_5$BMI)
+combined_5_HD_BP = combineCatVars(GH_5, vars = c('HeartDiseaseorAttack', 'HighBP'), sep = "_")
+# contingency table for HD+BP
+cont_ss5_HD_BP=Build_contigencytable(combined_5_HD_BP,"HeartDiseaseorAttack_HighBP","BMI")
+cont_ss5_HD_BP=cont_ss5_HD_BP[,1:(ncol(cont_ss5_HD_BP)-1)]
+# HD and Chol interaction
+GH_5$BMI = as.numeric(GH_5$BMI)
+combined_5_HD_Chol = combineCatVars(GH_5, vars = c('HeartDiseaseorAttack', 'HighChol'), sep = "_")
+# contingency table for HD+Chol
+cont_ss5_HD_Chol=Build_contigencytable(combined_5_HD_Chol,"HeartDiseaseorAttack_HighChol","BMI")
+cont_ss5_HD_Chol=cont_ss5_HD_Chol[,1:(ncol(cont_ss5_HD_Chol)-1)]
+# BP and Chol interaction
+GH_5$BMI = as.numeric(GH_5$BMI)
+combined_5_BP_Chol = combineCatVars(GH_5, vars = c('HighBP', 'HighChol'), sep = "_")
+# contingency table for BP+Chol
+cont_ss5_BP_Chol=Build_contigencytable(combined_5_BP_Chol,"HighBP_HighChol","BMI")
+cont_ss5_BP_Chol=cont_ss5_BP_Chol[,1:(ncol(cont_ss5_BP_Chol)-1)]
+
+# one way interactions for subset 2
+# HD effect on BMI
+GH_5$BMI = as.numeric(GH_5$BMI)
+# contingency table for HD
+cont_ss5_HD=Build_contigencytable(GH_5,"HeartDiseaseorAttack","BMI")
+cont_ss5_HD=cont_ss5_HD[,1:(ncol(cont_ss5_HD)-1)]
+# BP effect on BMI
+GH_5$BMI = as.numeric(GH_5$BMI)
+# contingency table for BP
+cont_ss5_BP=Build_contigencytable(GH_5,"HighBP","BMI")
+cont_ss5_BP=cont_ss5_BP[,1:(ncol(cont_ss5_BP)-1)]
+# Chol effect on BMI
+GH_5$BMI = as.numeric(GH_5$BMI)
+# contingency table for Chol
+cont_ss5_Chol=Build_contigencytable(GH_5,"HighChol","BMI")
+cont_ss5_Chol=cont_ss5_Chol[,1:(ncol(cont_ss5_Chol)-1)]
+
+# no interaction effect on BMI
+GH_5$BMI = as.numeric(GH_5$BMI)
+# contingency table for no interaction
+cont_5=Build_contigencytable(GH_5,"BMI","BMI")
+cont_5=cont_5[nrow(cont_5),1:(ncol(cont_5)-1)]
+
+clusters = hclust(dist(cont_ss5))
+plot(clusters, xlab="Heart Disease, Blood Pressure, and Cholestrol Interactions",main="Subset 5 - 3 way Interaction Hierarchical Clustering Tree")
+```
+
+In this HC Tree, we can see that there are three values that appear closer together, and the other 6 grouped together. This is different from the previous subset as it was usually split evenly based on high or not high blood pressure with the Total leaf in one category or the other. This time the no heart disease, no high blood pressure, high cholesterol leaf is grouped in with the other high blood pressure leaves. This will be interesting to see if it is a potential predictor in BMI distributions. 
+
+To further see predictions, we will run the following contingency tables: the three way contingency table, the two-way interaction tables involving blood pressure, and the one way blood pressure contingency table. 
+
+```{r, echo=FALSE}
+print("3 way interaction contingency table")
+cont_ss5
+print("HD+BP contingency table")
+cont_ss5_HD_BP
+print("BP+Chol Contingency Table")
+cont_ss5_BP_Chol
+print("Blood Pressure Contingency Table")
+cont_ss5_BP
+```
+
+For the 3 way contingency table, we can see that row 101 has the most proportions smaller than the row sum. As discussed earlier, row 101 is the interaction between heart disease, no high blood pressure, and high cholesterol. From our earlier observations on blood pressure coupled with this information, we look at the contingency table for the two way interactions of blood pressure. Here we can see that the 10+ and +01 have more proportions greater than their column-sum indicating less predictability of those interactions on our BMI distributions. 
+
+To further see the strength of our 101 interaction we will calculate the entropy values for all 27 interaction possibilities. 
+
+```{r, echo=FALSE}
+print("011")
+Entropy(cont_ss5[1,], base=exp(1))
+print("111")
+Entropy(cont_ss5[2,], base=exp(1))
+print("001")
+Entropy(cont_ss5[3,], base=exp(1))
+print("010")
+Entropy(cont_ss5[4,], base=exp(1))
+print("000")
+Entropy(cont_ss5[5,], base=exp(1))
+print("110")
+Entropy(cont_ss5[6,], base=exp(1))
+print("100") 
+Entropy(cont_ss5[7,], base=exp(1))
+print("101")
+Entropy(cont_ss5[8,], base=exp(1))
+print("01+")
+Entropy(cont_ss5_HD_BP[1,], base=exp(1))
+print("11+")
+Entropy(cont_ss5_HD_BP[2,], base=exp(1))
+print("00+")
+Entropy(cont_ss5_HD_BP[3,], base=exp(1))
+print("10+")
+Entropy(cont_ss5_HD_BP[4,], base=exp(1))
+print("0+1")
+Entropy(cont_ss5_HD_Chol[1,], base=exp(1))
+print("1+1")
+Entropy(cont_ss5_HD_Chol[2,], base=exp(1))
+print("0+0")
+Entropy(cont_ss5_HD_Chol[3,], base=exp(1))
+print("1+0")
+Entropy(cont_ss5_HD_Chol[4,], base=exp(1))
+print("+11")
+Entropy(cont_ss5_BP_Chol[1,], base=exp(1))
+print("+01")
+Entropy(cont_ss5_BP_Chol[2,], base=exp(1))
+print("+10")
+Entropy(cont_ss5_BP_Chol[3,], base=exp(1))
+print("+00")
+Entropy(cont_ss5_BP_Chol[4,], base=exp(1))
+print("0++")
+Entropy(cont_ss5_HD[1,], base=exp(1))
+print("1++")
+Entropy(cont_ss5_HD[2,], base=exp(1))
+print("+1+")
+Entropy(cont_ss5_BP[1,], base=exp(1))
+print("+0+")
+Entropy(cont_ss5_BP[2,], base=exp(1))
+print("++1")
+Entropy(cont_ss5_Chol[1,], base=exp(1))
+print("++0")
+Entropy(cont_ss5_Chol[2,], base=exp(1))
+print("+++")
+Entropy(cont_ss5[9,], base=exp(1))
+```
+
+From the entropy values above we can see that 101, heart disease, no high blood pressure, high cholesterol, has the lowest entropy value indicating that it has the best predictability and thus the strongest interaction. Our second lowest value comes from 10+ which as we discussed earlier through the contingency tables, was not as strong of an indicator as 101. Finally, we will look at the reliability using the multinomial distribution. 
+
+
+## Subset 5 Reliability 
+
+Like our other subsets we are again not going to run all 27 histograms and HC Trees. In our entropy calculation we saw potential interactions with some variables and will investigate them further through entropy distributions. We will start by looking at the effect of no heart disease alone, add the no high cholesterol variable to it, and finally add the no high blood pressure variable to this. Next we will look at the no high cholesterol value alone, its interaction with high blood pressure, and this entire variable's interaction with heart disease. Finally, we will look at high blood pressure alone, its interaction with heart disease, and add not high blood pressure. The distributions are shown below. 
+
+```{r, echo=FALSE}
+# multinomial for 0++
+sample50TT = rmultinom(1000,115,cont_ss5_HD[1,])
+A=ncol(sample50TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample50TT[,i],base=exp(1))
+}
+hist_50TT = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No Heart Disease',xlab='Entropy')
+
+# multinomial for 0+0
+sample50T0 = rmultinom(1000,115,cont_ss5_HD_Chol[3,])
+A=ncol(sample50T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample50T0[,i],base=exp(1))
+}
+hist_50T0 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for 000
+sample5000 = rmultinom(1000,115,cont_ss5[5,])
+A=ncol(sample5000)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5000[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5000))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, No High Cholestorol')
+
+# multinomial for ++0
+sample5TT0 = rmultinom(1000,115,cont_ss5_Chol[2,])
+A=ncol(sample5TT0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5TT0[,i],base=exp(1))
+}
+hist_5TT0 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No High Cholesterol',xlab='Entropy')
+
+# multinomial for +10
+sample5T10 = rmultinom(1000,115,cont_ss5_BP_Chol[3,])
+A=ncol(sample5T10)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5T10[,i],base=exp(1))
+}
+hist_5T00 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for 110
+sample5110 = rmultinom(1000,115,cont_ss5[6,])
+A=ncol(sample5110)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5110[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5110))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, No High Cholestorol')
+
+# multinomial for ++1
+sample5TT1 = rmultinom(1000,115,cont_ss5_Chol[1,])
+A=ncol(sample5TT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5TT1[,i],base=exp(1))
+}
+hist_5TT1= hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for High Cholesterol',xlab='Entropy')
+
+# multinomial for 1+1
+sample51T1 = rmultinom(1000,115,cont_ss5_HD_Chol[2,])
+A=ncol(sample51T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample51T1[,i],base=exp(1))
+}
+hist_51T1 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 101
+sample5101 = rmultinom(1000,115,cont_ss5[8,])
+A=ncol(sample5101)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5101[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5101))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, High Cholestorol')
+```
+
+```{r, echo=FALSE, include=FALSE}
+# multinomial for 011
+sample5011 = rmultinom(1000,115,cont_ss5[1,])
+A=ncol(sample5011)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5011[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5011))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, High Cholestorol')
+
+# multinomial for 111
+sample5111 = rmultinom(1000,115,cont_ss5[2,])
+A=ncol(sample5111)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5111[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5111))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, High BP, High Cholestorol')
+
+# multinomial for 001
+sample5001 = rmultinom(1000,115,cont_ss5[3,])
+A=ncol(sample5001)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5001[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, No High BP, High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5011))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, No High BP, High Cholestorol')
+
+# multinomial for 010
+sample5010 = rmultinom(1000,115,cont_ss5[4,])
+A=ncol(sample5010)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5010[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No HD, High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5010))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No HD, High BP, No High Cholestorol')
+
+# multinomial for 100
+sample5100 = rmultinom(1000,115,cont_ss5[7,])
+A=ncol(sample5100)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5100[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP, No High Cholestorol',xlab='Entropy')
+cluster = hclust(dist(sample5100))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP, No High Cholestorol')
+
+# multinomial for 10+
+sample510T = rmultinom(1000,115,cont_ss5_HD_BP[4,])
+A=ncol(sample510T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample510T[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for HD, No High BP',xlab='Entropy')
+cluster = hclust(dist(sample510T))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for HD, No High BP')
+
+# multinomial for +01
+sample5T01= rmultinom(1000,115,cont_ss5_BP_Chol[2,])
+A=ncol(sample5T01)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5T01[,i],base=exp(1))
+}
+hist(entropies, breaks = 10, main='Histogram of Entropy for No High BP, High Cholesterol',xlab='Entropy')
+cluster = hclust(dist(sample5T01))
+plot(cluster, xlab="MN distribution", main='Dendogram of Entropy for No High BP, High Cholesterol')
+
+# multinomial for 01+
+sample501T = rmultinom(1000,115,cont_ss5_HD_BP[1,])
+A=ncol(sample501T)
+# initialize a vector to save all entropies
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample501T[,i],base=exp(1))
+}
+hist_501T = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 11+
+sample511T = rmultinom(1000,115,cont_ss5_HD_BP[2,])
+A=ncol(sample511T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample511T[,i],base=exp(1))
+}
+hist_511T = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for Heart Disease, High Blood Pressure',xlab='Entropy')
+
+# multinomial for 00+
+sample500T = rmultinom(1000,115,cont_ss5_HD_BP[3,])
+A=ncol(sample500T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample500T[,i],base=exp(1))
+}
+hist_500T = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No Heart Disease, No High Blood Pressure',xlab='Entropy')
+
+# multinomial for 0+1
+sample50T1 = rmultinom(1000,115,cont_ss5_HD_Chol[1,])
+A=ncol(sample50T1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample50T1[,i],base=exp(1))
+}
+hist_50T1 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No Heart Disease, High Cholesterol',xlab='Entropy')
+
+# multinomial for 1+0
+sample51T0 = rmultinom(1000,115,cont_ss5_HD_Chol[4,])
+A=ncol(sample51T0)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample51T0[,i],base=exp(1))
+}
+hist_51T0 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for Heart Disease, No High Cholesterol',xlab='Entropy')
+
+# multinomial for +11
+sample5T11 = rmultinom(1000,115,cont_ss5_BP_Chol[1,])
+A=ncol(sample5T11)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5T11[,i],base=exp(1))
+}
+hist_5T11 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for High Blood Pressure, High Cholesterol',xlab='Entropy')
+
+# multinomial for +00
+sample5T00 = rmultinom(1000,115,cont_ss5_BP_Chol[4,])
+A=ncol(sample5T00)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5T00[,i],base=exp(1))
+}
+hist_5T00 = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No High Blood Pressure, No High Cholesterol',xlab='Entropy')
+
+# multinomial for 1++
+sample51TT = rmultinom(1000,115,cont_ss5_HD[2,])
+A=ncol(sample51TT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample51TT[,i],base=exp(1))
+}
+hist_51TT = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for Heart Disease',xlab='Entropy')
+
+# multinomial for +1+
+sample5T1T = rmultinom(1000,115,cont_ss5_BP[1,])
+A=ncol(sample5T1T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5T1T[,i],base=exp(1))
+}
+hist_5T1T = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for High Blood Pressure',xlab='Entropy')
+
+# multinomial for +0+
+sample5T0T = rmultinom(1000,115,cont_ss5_BP[2,])
+A=ncol(sample5T0T)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5T0T[,i],base=exp(1))
+}
+hist_5T0T = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No High Blood Pressure',xlab='Entropy')
+
+# multinomial for ++1
+sample5TT1 = rmultinom(1000,115,cont_ss5_Chol[1,])
+A=ncol(sample5TT1)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5TT1[,i],base=exp(1))
+}
+hist_5TT1= hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for High Cholesterol',xlab='Entropy')
+
+# multinomial for +++
+sample5TTT = rmultinom(1000,115,cont_5)
+A=ncol(sample5TTT)
+# initialize a vector to save all entropies.
+entropies=numeric(A)
+for(i in 1:A){
+  entropies[i]=Entropy(sample5TTT[,i],base=exp(1))
+}
+hist_5TTT = hist(entropies, breaks = 10, main='Subset 5 - Histogram of Entropy for No Interaction',xlab='Entropy')
+```
+
+From this we can see the folowing information:
+
+A) Not high cholesterol added to not heart disease decreases entropy which increases predictability and the likelihood that the two have an interaction effect. When not high blood pressure is added to this interacting variable, our entropy value decrease again causing the predictability of BMI distributions to increase again. 
+
+B) The high blood pressure variable added to the not high cholesterol variable causes a decrease in entropy. When we add heart disease, the entropy decreases again. This suggests a two way interaction between high blood pressure and not high cholesterol and a further 3 way interaction between heart disease, high blood pressure, and not high cholesterol. 
+
+C) The heart disease variable added to the high cholesterol variable decreases entropy. When we add no high blood pressure to this variable we see a sharp decrease in entropy. This suggests that adding the no high blood pressure variable gives us a better prediction for the BMI categories compared to the preivous two-way interaction. 
+
+The hierarchical clustering trees also appear relatively similar among the three way interactions indicating the smooth distribution of the values in our original contingency tables. 
+
+
+# Conclusion
+
+From our Entropy and Hierarchical Clustering methods above, we were able to gauge what variables may be interacting with each other. For instance, in subset 2 we saw that there was a potential in a interaction variable of "101". The HC Tree approach showed us how distant this variable was from our "Total" leaf, the column sum value. Then as we looked at our contigency table, it appeared that most proportions in the "101" column were lower than the total column-sum proportions. This suggests that there is a potential interaction among these variables. The Entropy approach then showed us that "101" had the lowest entropy value. During our reliability testing we saw that adding no high cholesterol to heart disease (1+1) decreased our entropy value. Seeing that there may be a two way interaction between these variables, we try to add a third variable. The variable that decreased the entropy the most was low blood pressure, and thus variable "101" was formed. 
+
+Across all five subsets we saw that the interaction variable "101", or heart disease, no high blood pressure, high cholesterol, appeared to have dropped in entropy values when all three variables were together compared to when only two or only one variable was present. This means we have increased predictability in BMI distributions. So what can this really show us? 
+
+In this data set and project, we are looking at how BMI distributions are affected by different independent or dependent variables in our dataset. From a multinomial replication of our proportions in our data set we can see the general entropy distribution. This distribution shows us the importance of some variables in the predictability of our BMI distributions as mentioned above. In our data set we saw this significantly when adding no high blood pressure to our two-way interaction between heart disease and high cholesterol. Therefore, regardless of subset category we are able to see that adding no high blood pressure to our interaction between heart disease and high cholesterol decreases entropy meaning we have better predictions for BMI categories.
